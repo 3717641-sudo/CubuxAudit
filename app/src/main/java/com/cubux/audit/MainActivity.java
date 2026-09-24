@@ -1,4 +1,3 @@
-```java
 package com.cubux.audit;
 
 import android.app.Activity;
@@ -59,7 +58,7 @@ public class MainActivity extends Activity {
         layout.addView(tokenInput);
 
         Button testButton = new Button(this);
-        testButton.setText("Проверить подключение");
+        testButton.setText("Загрузить операции");
 
         layout.addView(testButton);
 
@@ -89,18 +88,15 @@ public class MainActivity extends Activity {
 
             try {
 
-                CubuxClient client =
-                        new CubuxClient(token);
+                CubuxClient client = new CubuxClient(token);
 
-                CubuxLoader loader =
-                        new CubuxLoader(
-                                client,
-                                "2021-07-04",
-                                "2026-09-25"
-                        );
+                CubuxLoader loader = new CubuxLoader(
+                        client,
+                        "2021-07-04",
+                        "2026-09-25"
+                );
 
-                CubuxLoader.Result result =
-                        loader.loadAll();
+                CubuxLoader.Result result = loader.loadAll();
 
                 runOnUiThread(() ->
                         statusText.setText(
@@ -131,4 +127,3 @@ public class MainActivity extends Activity {
         }).start();
     }
 }
-```
