@@ -1,9 +1,6 @@
-```java
 package com.cubux.audit;
 
 import android.content.Context;
-import android.database.Cursor;
-import android.database.sqlite.SQLiteDatabase;
 
 import org.json.JSONObject;
 
@@ -28,10 +25,6 @@ public class AuditEngine {
             int expectedTotal
     ) throws Exception {
 
-        /*
-         * КРИТИЧЕСКАЯ ЗАЩИТА:
-         * неполная загрузка не изменяет локальную базу.
-         */
         if (items == null) {
             throw new Exception("Операции отсутствуют");
         }
@@ -57,10 +50,6 @@ public class AuditEngine {
         int changedCount = 0;
         int deletedCount = 0;
 
-        /*
-         * Создаём новый полный снимок
-         * в памяти.
-         */
         for (JSONObject item : items) {
 
             String id = getId(item);
@@ -83,9 +72,6 @@ public class AuditEngine {
             current.put(id, data);
         }
 
-        /*
-         * NEW / CHANGED
-         */
         for (Map.Entry<String, String> entry :
                 current.entrySet()) {
 
@@ -121,9 +107,6 @@ public class AuditEngine {
             }
         }
 
-        /*
-         * DELETED
-         */
         Set<String> deleted =
                 new HashSet<>(old.keySet());
 
@@ -142,10 +125,6 @@ public class AuditEngine {
             );
         }
 
-        /*
-         * Только после полной проверки
-         * обновляем основную таблицу.
-         */
         for (Map.Entry<String, String> entry :
                 current.entrySet()) {
 
@@ -170,10 +149,6 @@ public class AuditEngine {
             }
         }
 
-        /*
-         * Удаляем отсутствующие записи
-         * из текущего снимка.
-         */
         for (String id : deleted) {
             db.deleteTransaction(id);
         }
@@ -307,4 +282,3 @@ public class AuditEngine {
         }
     }
 }
-```
