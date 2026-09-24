@@ -1,12 +1,13 @@
+```java
 package com.cubux.audit;
 
 import android.content.Context;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 
 import org.json.JSONObject;
 
 import java.security.MessageDigest;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -29,7 +30,7 @@ public class AuditEngine {
 
         /*
          * КРИТИЧЕСКАЯ ЗАЩИТА:
-         * неполная загрузка не должна менять локальную базу.
+         * неполная загрузка не изменяет локальную базу.
          */
         if (items == null) {
             throw new Exception("Операции отсутствуют");
@@ -57,7 +58,7 @@ public class AuditEngine {
         int deletedCount = 0;
 
         /*
-         * Сначала строим новый полный снимок
+         * Создаём новый полный снимок
          * в памяти.
          */
         for (JSONObject item : items) {
@@ -122,9 +123,6 @@ public class AuditEngine {
 
         /*
          * DELETED
-         *
-         * Удалением считается только то,
-         * что было в предыдущем ПОЛНОМ снимке.
          */
         Set<String> deleted =
                 new HashSet<>(old.keySet());
@@ -145,8 +143,8 @@ public class AuditEngine {
         }
 
         /*
-         * Теперь полный снимок проверен.
-         * Только здесь обновляем основную таблицу.
+         * Только после полной проверки
+         * обновляем основную таблицу.
          */
         for (Map.Entry<String, String> entry :
                 current.entrySet()) {
@@ -155,12 +153,15 @@ public class AuditEngine {
             String data = entry.getValue();
 
             if (old.containsKey(id)) {
+
                 db.updateTransaction(
                         id,
                         data,
                         now
                 );
+
             } else {
+
                 db.saveTransaction(
                         id,
                         data,
@@ -170,7 +171,8 @@ public class AuditEngine {
         }
 
         /*
-         * Удаляем из текущего снимка отсутствующие записи.
+         * Удаляем отсутствующие записи
+         * из текущего снимка.
          */
         for (String id : deleted) {
             db.deleteTransaction(id);
@@ -186,7 +188,7 @@ public class AuditEngine {
 
     private JSONObject normalize(
             JSONObject source
-    ) {
+    ) throws Exception {
 
         String[] fields = {
                 "id",
@@ -215,9 +217,11 @@ public class AuditEngine {
                 "type"
         };
 
-        JSONObject result = new JSONObject();
+        JSONObject result =
+                new JSONObject();
 
         for (String field : fields) {
+
             result.put(
                     field,
                     source.opt(field)
@@ -227,9 +231,12 @@ public class AuditEngine {
         return result;
     }
 
-    private String getId(JSONObject item) {
+    private String getId(
+            JSONObject item
+    ) {
 
-        Object id = item.opt("id");
+        Object id =
+                item.opt("id");
 
         if (id == null) {
             return null;
@@ -238,11 +245,14 @@ public class AuditEngine {
         return String.valueOf(id);
     }
 
-    private String hash(String text)
-            throws Exception {
+    private String hash(
+            String text
+    ) throws Exception {
 
         MessageDigest digest =
-                MessageDigest.getInstance("SHA-256");
+                MessageDigest.getInstance(
+                        "SHA-256"
+                );
 
         byte[] bytes =
                 digest.digest(
@@ -253,6 +263,7 @@ public class AuditEngine {
                 new StringBuilder();
 
         for (byte b : bytes) {
+
             result.append(
                     String.format(
                             Locale.US,
@@ -267,10 +278,12 @@ public class AuditEngine {
 
     private String now() {
 
-        return new SimpleDateFormat(
+        return new java.text.SimpleDateFormat(
                 "yyyy-MM-dd'T'HH:mm:ss",
                 Locale.US
-        ).format(new Date());
+        ).format(
+                new java.util.Date()
+        );
     }
 
     public static class Result {
@@ -286,6 +299,7 @@ public class AuditEngine {
                 int changedCount,
                 int deletedCount
         ) {
+
             this.total = total;
             this.newCount = newCount;
             this.changedCount = changedCount;
@@ -293,3 +307,4 @@ public class AuditEngine {
         }
     }
 }
+```
