@@ -1,3 +1,4 @@
+```java
 package com.cubux.audit;
 
 import android.app.Activity;
@@ -29,11 +30,13 @@ public class MainActivity extends Activity {
         title.setTextColor(Color.BLACK);
         title.setGravity(Gravity.CENTER);
 
-        layout.addView(title,
+        layout.addView(
+                title,
                 new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
-                ));
+                )
+        );
 
         TextView info = new TextView(this);
         info.setText(
@@ -80,42 +83,47 @@ public class MainActivity extends Activity {
             return;
         }
 
-        statusText.setText("Проверяем подключение...");
+        statusText.setText("Загружаем операции Cubux...");
 
         new Thread(() -> {
 
             try {
 
-                /*
-                 * URL пока НЕ указываем.
-                 * Сначала подключим проверенный endpoint
-                 * из нашего Cubux-аудита.
-                 */
+                CubuxClient client =
+                        new CubuxClient(token);
 
-                CubuxClient client = new CubuxClient(token);
+                CubuxLoader loader =
+                        new CubuxLoader(
+                                client,
+                                "2021-07-04",
+                                "2026-09-25"
+                        );
 
-String url =
-        "https://app.cubux.net/api/v1/transaction/team/250574" +
-        "?dateSince=2021-07-04" +
-        "&dateUntil=2026-09-25" +
-        "&mn=1" +
-        "&page=1";
+                CubuxLoader.Result result =
+                        loader.loadAll();
 
-String result = client.get(url);
-
-runOnUiThread(() ->
-        statusText.setText(
-                "Cubux подключен!\n\n" +
-                "Первая страница получена.\n" +
-                "Ответ: " + result.length() + " символов."
-        )
-);
+                runOnUiThread(() ->
+                        statusText.setText(
+                                "Cubux подключен!\n\n" +
+                                "Всего записей: " +
+                                result.totalCount +
+                                "\n" +
+                                "Страниц: " +
+                                result.pageCount +
+                                "\n\n" +
+                                "Получено: " +
+                                result.items.size() +
+                                "\n\n" +
+                                "Проверка целостности: OK"
+                        )
+                );
 
             } catch (Exception e) {
 
                 runOnUiThread(() ->
                         statusText.setText(
-                                "Ошибка: " + e.getMessage()
+                                "Ошибка загрузки:\n\n" +
+                                e.getMessage()
                         )
                 );
             }
@@ -123,3 +131,4 @@ runOnUiThread(() ->
         }).start();
     }
 }
+```
