@@ -92,12 +92,24 @@ public class MainActivity extends Activity {
                  * из нашего Cubux-аудита.
                  */
 
-                runOnUiThread(() ->
-                        statusText.setText(
-                                "Токен получен.\n" +
-                                "Endpoint Cubux добавим следующим шагом."
-                        )
-                );
+                CubuxClient client = new CubuxClient(token);
+
+String url =
+        "https://app.cubux.net/api/v1/transaction/team/250574" +
+        "?dateSince=2021-07-04" +
+        "&dateUntil=2026-09-25" +
+        "&mn=1" +
+        "&page=1";
+
+String result = client.get(url);
+
+runOnUiThread(() ->
+        statusText.setText(
+                "Cubux подключен!\n\n" +
+                "Первая страница получена.\n" +
+                "Ответ: " + result.length() + " символов."
+        )
+);
 
             } catch (Exception e) {
 
