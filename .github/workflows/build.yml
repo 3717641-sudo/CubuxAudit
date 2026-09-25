@@ -1,38 +1,38 @@
-name: Build Cubux Audit APK
+name: Install and Build Cubux Audit 2.0
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  install_and_build:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: '8.7'
 
-      - name: Create Android project
-        run: |
-          mkdir -p app/src/main/java/com/cubux/audit
-          mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/res/layout
-
-      - name: Build
+      - name: Check installer ZIP
+        run: | if [ ! -f "CubuxAudit_2_0_INSTALL.zip" ]; then echo "ERROR: CubuxAudit_2_0_INSTALL.zip not found in repository root" exit 1 fi 
+      - name: Unpack Cubux Audit 2.0
+        run: | echo "Unpacking Cubux Audit 2.0..." unzip -o CubuxAudit_2_0_INSTALL.zip -d . echo "Project files installed." 
+      - name: Verify project
+        run: | test -f settings.gradle test -f build.gradle test -f app/build.gradle test -f app/src/main/AndroidManifest.xml test -f app/src/main/java/com/cubux/audit/MainActivity.java echo "Project structure OK." 
+      - name: Build APK
         run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CubuxAudit
+          name: CubuxAudit-2.0
           path: app/build/outputs/apk/debug/app-debug.apk
