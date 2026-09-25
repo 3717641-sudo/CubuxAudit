@@ -1,10 +1,13 @@
 package com.cubux.audit;
 
 import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
 
 import org.json.JSONObject;
 
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -46,9 +49,10 @@ public class AuditEngine {
         Map<String, String> current =
                 new HashMap<>();
 
-        int newCount = 0;
-        int changedCount = 0;
-        int deletedCount = 0;
+        /*
+         * Сначала полностью проверяем полученные данные.
+         * До этого момента база НЕ изменяется.
+         */
 
         for (JSONObject item : items) {
 
@@ -72,6 +76,30 @@ public class AuditEngine {
             current.put(id, data);
         }
 
+        /*
+         * Дополнительная проверка количества.
+         */
+
+        if (current.size() != expectedTotal) {
+            throw new Exception(
+                    "ОШИБКА ЦЕЛОСТНОСТИ: уникальных ID " +
+                    current.size() +
+                    " из " +
+                    expectedTotal
+            );
+        }
+
+        int newCount = 0;
+        int changedCount = 0;
+        int deletedCount = 0;
+
+        List<ChangeItem> detectedChanges =
+                new ArrayList<>();
+
+        /*
+         * NEW / CHANGED
+         */
+
         for (Map.Entry<String, String> entry :
                 current.entrySet()) {
 
@@ -84,12 +112,13 @@ public class AuditEngine {
 
                 newCount++;
 
-                db.saveChange(
-                        now,
-                        id,
-                        "NEW",
-                        null,
-                        newData
+                detectedChanges.add(
+                        new ChangeItem(
+                                id,
+                                "NEW",
+                                null,
+                                newData
+                        )
                 );
 
             } else if (!hash(oldData).equals(
@@ -97,15 +126,20 @@ public class AuditEngine {
 
                 changedCount++;
 
-                db.saveChange(
-                        now,
-                        id,
-                        "CHANGED",
-                        oldData,
-                        newData
+                detectedChanges.add(
+                        new ChangeItem(
+                                id,
+                                "CHANGED",
+                                oldData,
+                                newData
+                        )
                 );
             }
         }
+
+        /*
+         * DELETED
+         */
 
         Set<String> deleted =
                 new HashSet<>(old.keySet());
@@ -116,49 +150,196 @@ public class AuditEngine {
 
             deletedCount++;
 
-            db.saveChange(
-                    now,
-                    id,
-                    "DELETED",
-                    old.get(id),
-                    null
+            detectedChanges.add(
+                    new ChangeItem(
+                            id,
+                            "DELETED",
+                            old.get(id),
+                            null
+                    )
             );
         }
 
-        for (Map.Entry<String, String> entry :
-                current.entrySet()) {
+        /*
+         * Создаём RUNNING.
+         *
+         * Если дальнейшая запись завершится ошибкой,
+         * данные не будут частично применены.
+         */
 
-            String id = entry.getKey();
-            String data = entry.getValue();
+        long runId =
+                db.createRunningRun(now);
 
-            if (old.containsKey(id)) {
+        SQLiteDatabase database =
+                db.beginTransaction();
 
-                db.updateTransaction(
-                        id,
-                        data,
-                        now
+        boolean success = false;
+
+        try {
+
+            /*
+             * Записываем журнал изменений.
+             */
+
+            for (ChangeItem change :
+                    detectedChanges) {
+
+                db.saveChange(
+                        now,
+                        change.transactionId,
+                        change.type,
+                        change.oldData,
+                        change.newData
                 );
+            }
 
-            } else {
+            /*
+             * Обновляем текущее состояние.
+             */
 
-                db.saveTransaction(
-                        id,
-                        data,
-                        now
-                );
+            for (Map.Entry<String, String> entry :
+                    current.entrySet()) {
+
+                String id = entry.getKey();
+                String data = entry.getValue();
+
+                if (old.containsKey(id)) {
+
+                    db.updateTransaction(
+                            id,
+                            data,
+                            now
+                    );
+
+                } else {
+
+                    db.saveTransaction(
+                            id,
+                            data,
+                            now
+                    );
+                }
+            }
+
+            /*
+             * Удаляем из текущего состояния
+             * отсутствующие в Cubux операции.
+             *
+             * САМИ записи Cubux здесь НЕ удаляются.
+             * Удаляется только наша локальная копия.
+             */
+
+            for (String id : deleted) {
+
+                db.deleteTransaction(id);
+            }
+
+            db.endTransaction(
+                    database,
+                    true
+            );
+
+            success = true;
+
+        } finally {
+
+            if (!success) {
+
+                /*
+                 * Если транзакция не была успешно
+                 * завершена, откатываем изменения.
+                 */
+
+                try {
+                    db.endTransaction(
+                            database,
+                            false
+                    );
+                } catch (Exception ignored) {
+                }
             }
         }
 
-        for (String id : deleted) {
-            db.deleteTransaction(id);
-        }
+        /*
+         * Только после успешной фиксации данных
+         * RUNNING превращается в OK.
+         */
+
+        db.finishRun(
+                runId,
+                now(),
+                current.size(),
+                newCount,
+                changedCount,
+                deletedCount,
+                "OK"
+        );
 
         return new Result(
                 current.size(),
                 newCount,
                 changedCount,
-                deletedCount
+                deletedCount,
+                runId,
+                now
         );
+    }
+
+    /*
+     * Создание контрольного hash текущего состояния.
+     *
+     * ID сортируются, поэтому порядок страниц API
+     * не влияет на результат.
+     */
+
+    public String createControlHash(
+            List<JSONObject> items
+    ) throws Exception {
+
+        if (items == null) {
+            throw new Exception(
+                    "Операции отсутствуют"
+            );
+        }
+
+        List<String> normalized =
+                new ArrayList<>();
+
+        Set<String> ids =
+                new HashSet<>();
+
+        for (JSONObject item : items) {
+
+            String id = getId(item);
+
+            if (id == null) {
+                throw new Exception(
+                        "Запись без ID"
+                );
+            }
+
+            if (!ids.add(id)) {
+                throw new Exception(
+                        "Дубликат ID: " + id
+                );
+            }
+
+            normalized.add(
+                    normalize(item).toString()
+            );
+        }
+
+        Collections.sort(normalized);
+
+        StringBuilder builder =
+                new StringBuilder();
+
+        for (String value : normalized) {
+            builder.append(value);
+            builder.append('\n');
+        }
+
+        return hash(builder.toString());
     }
 
     private JSONObject normalize(
@@ -217,7 +398,14 @@ public class AuditEngine {
             return null;
         }
 
-        return String.valueOf(id);
+        String value =
+                String.valueOf(id).trim();
+
+        if (value.isEmpty()) {
+            return null;
+        }
+
+        return value;
     }
 
     private String hash(
@@ -261,24 +449,58 @@ public class AuditEngine {
         );
     }
 
+    private static class ChangeItem {
+
+        final String transactionId;
+        final String type;
+        final String oldData;
+        final String newData;
+
+        ChangeItem(
+                String transactionId,
+                String type,
+                String oldData,
+                String newData
+        ) {
+
+            this.transactionId =
+                    transactionId;
+
+            this.type =
+                    type;
+
+            this.oldData =
+                    oldData;
+
+            this.newData =
+                    newData;
+        }
+    }
+
     public static class Result {
 
         public final int total;
         public final int newCount;
         public final int changedCount;
         public final int deletedCount;
+        public final long runId;
+        public final String finishedAt;
 
         public Result(
                 int total,
                 int newCount,
                 int changedCount,
-                int deletedCount
+                int deletedCount,
+                long runId,
+                String finishedAt
         ) {
 
             this.total = total;
             this.newCount = newCount;
             this.changedCount = changedCount;
             this.deletedCount = deletedCount;
+            this.runId = runId;
+            this.finishedAt = finishedAt;
         }
     }
 }
