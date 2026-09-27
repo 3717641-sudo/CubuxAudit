@@ -1,4 +1,4 @@
-name: Cubux Audit 2.0 Build
+name: Cubux Audit Release Build
 
 on:
   workflow_dispatch:
@@ -8,25 +8,42 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v5
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v5
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: '8.7'
+
+      - name: Check installer ZIP
+        run: |
+          test -f CubuxAudit_2_0_INSTALL.zip
 
       - name: Install project
         run: unzip -o CubuxAudit_2_0_INSTALL.zip -d .
 
-      - name: Build APK
-        run: gradle assembleDebug
+      - name: Restore permanent signing key
+        run: |
+          echo "${{ secrets.CUBUX_KEYSTORE_BASE64 }}" | base64 -d > cubux-release.jks
+          test -s cubux-release.jks
+
+      - name: Build signed release APK
+        env:
+          CUBUX_KEYSTORE_FILE: ${{ github.workspace }}/cubux-release.jks
+          CUBUX_KEYSTORE_PASSWORD: ${{ secrets.CUBUX_KEYSTORE_PASSWORD }}
+          CUBUX_KEY_ALIAS: ${{ secrets.CUBUX_KEY_ALIAS }}
+          CUBUX_KEY_PASSWORD: ${{ secrets.CUBUX_KEY_PASSWORD }}
+        run: gradle assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CubuxAudit-2.0
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: CubuxAudit-2.5-Release
+          path: app/build/outputs/apk/release/app-release.apk
