@@ -1,4 +1,4 @@
-name: Cubux 2.9 Release
+name: Cubux Security 3.0 Release
 
 on:
   workflow_dispatch:
@@ -9,47 +9,81 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unpack Cubux 2.9
+      - name: Unpack Cubux Security 3.0
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
+          test -f CubuxAudit_3_0_INSTALL.zip
+          rm -rf /tmp/cubux30
+          mkdir -p /tmp/cubux30
+          unzip -q CubuxAudit_3_0_INSTALL.zip -d /tmp/cubux30
+          cp -a /tmp/cubux30/. .
+          test -f app/src/main/java/com/cubux/audit/StableHistoryLoader.java
+          test -f app/src/main/java/com/cubux/audit/PeriodControlEngine.java
 
-          if [ -f CubuxAudit_2_9_INSTALL.zip ]; then
-            mkdir -p "$RUNNER_TEMP/cubux29"
-            unzip -q CubuxAudit_2_9_INSTALL.zip -d "$RUNNER_TEMP/cubux29"
-            cp -a "$RUNNER_TEMP/cubux29/." .
-          fi
-
-          test -f settings.gradle
-          test -f app/build.gradle
-          test -f app/src/main/java/com/cubux/audit/GentleServerGate.java
-
-      - name: Fix LightCheckEngine compilation
+      - name: Validate 3.0 safety rules
         shell: bash
         run: |
-          python3 - <<'PY'
+          python3 - <<'PYCODE'
           from pathlib import Path
 
-          p = Path("app/src/main/java/com/cubux/audit/LightCheckEngine.java")
-          text = p.read_text(encoding="utf-8")
+          root = Path('.')
 
-          old = "private Map<String,String> monthHashes(Object root){"
-          new = "private Map<String,String> monthHashes(Object root) throws Exception {"
+          def need(cond, msg):
+              if not cond:
+                  raise SystemExit('VALIDATION FAILED: ' + msg)
 
-          if old in text:
-              text = text.replace(old, new, 1)
-              p.write_text(text, encoding="utf-8")
-          elif new not in text:
-              raise SystemExit("Unexpected LightCheckEngine source: patch not applied")
+          co = (root / 'app/src/main/java/com/cubux/audit/AuditCoordinator.java').read_text(encoding='utf-8')
+          pc = (root / 'app/src/main/java/com/cubux/audit/PeriodControlEngine.java').read_text(encoding='utf-8')
+          ae = (root / 'app/src/main/java/com/cubux/audit/AuditEngine.java').read_text(encoding='utf-8')
+          cs = (root / 'app/src/main/java/com/cubux/audit/CheckSettings.java').read_text(encoding='utf-8')
+          ma = (root / 'app/src/main/java/com/cubux/audit/MainActivity.java').read_text(encoding='utf-8')
+          sh = (root / 'app/src/main/java/com/cubux/audit/StableHistoryLoader.java').read_text(encoding='utf-8')
+          bg = (root / 'app/build.gradle').read_text(encoding='utf-8')
 
-          print("LightCheckEngine fix verified")
-          PY
+          need(
+              'String to=TimeUtil.yesterday();' in co
+              and 'String to=TimeUtil.today();' not in co,
+              'today must be excluded from scans'
+          )
+
+          need(
+              'String cutoff = TimeUtil.yesterday();' in pc,
+              'period cutoff must be yesterday'
+          )
+
+          need(
+              'baselineDates' in pc and 'baselineDay' in ae,
+              'silent baseline for previously unprotected days missing'
+          )
+
+          need(
+              'SQLiteDatabase sql=db.begin()' in ae and 'closureUpdates' in ae,
+              'atomic save missing'
+          )
+
+          need(
+              'MAX_STABILITY_RETRIES = 3' in sh,
+              'stability retry protection missing'
+          )
+
+          need(
+              '1000L, 30000L' in cs and 'new long[30]' in ma,
+              '1-30 second delay missing'
+          )
+
+          need(
+              'Cubux Security 3.0' in ma and "versionName '3.0'" in bg,
+              'branding/version mismatch'
+          )
+
+          print('PASS: Cubux Security 3.0 safety rules')
+          PYCODE
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
@@ -57,73 +91,73 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK 35
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Test server protection
+      - name: Test request protection
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
+          mkdir -p /tmp/cubux-tests
 
-          mkdir -p "$RUNNER_TEMP/cubux-tests"
-
-          javac -d "$RUNNER_TEMP/cubux-tests" \
+          javac -d /tmp/cubux-tests \
             app/src/main/java/com/cubux/audit/GentleServerGate.java \
             app/src/main/java/com/cubux/audit/AuditControl.java \
             app/src/main/java/com/cubux/audit/AuditProgressListener.java \
-            app/src/main/java/com/cubux/audit/CubuxClient.java \
-            app/src/main/java/com/cubux/audit/CubuxAuthClient.java \
             tests/GentleServerGateTest.java
 
-          java -cp "$RUNNER_TEMP/cubux-tests" \
-            com.cubux.audit.GentleServerGateTest
+          java -cp /tmp/cubux-tests com.cubux.audit.GentleServerGateTest
 
-      - name: Build signed APK
+      - name: Test closed-day cutoff
         shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/cubux-time-tests
+
+          javac -d /tmp/cubux-time-tests \
+            app/src/main/java/com/cubux/audit/TimeUtil.java \
+            tests/ClosedDayRulesTest.java
+
+          java -cp /tmp/cubux-time-tests com.cubux.audit.ClosedDayRulesTest
+
+      - name: Build signed release APK
         env:
           CUBUX_KEYSTORE_BASE64: ${{ secrets.CUBUX_KEYSTORE_BASE64 }}
           CUBUX_KEYSTORE_PASSWORD: ${{ secrets.CUBUX_KEYSTORE_PASSWORD }}
           CUBUX_KEY_ALIAS: ${{ secrets.CUBUX_KEY_ALIAS }}
           CUBUX_KEY_PASSWORD: ${{ secrets.CUBUX_KEY_PASSWORD }}
+        shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
-          for secret_name in \
-            CUBUX_KEYSTORE_BASE64 \
-            CUBUX_KEYSTORE_PASSWORD \
-            CUBUX_KEY_ALIAS \
-            CUBUX_KEY_PASSWORD
-          do
-            if [ -z "${!secret_name}" ]; then
-              echo "::error::Missing GitHub Secret: $secret_name"
-              exit 1
-            fi
-          done
+          test -n "$CUBUX_KEYSTORE_BASE64"
+          test -n "$CUBUX_KEYSTORE_PASSWORD"
+          test -n "$CUBUX_KEY_ALIAS"
+          test -n "$CUBUX_KEY_PASSWORD"
 
           export CUBUX_KEYSTORE_FILE="$RUNNER_TEMP/cubux-release.jks"
+
           trap 'rm -f "$CUBUX_KEYSTORE_FILE"' EXIT
 
           printf '%s' "$CUBUX_KEYSTORE_BASE64" \
             | tr -d '[:space:]' \
-            | base64 --decode > "$CUBUX_KEYSTORE_FILE"
+            | base64 --decode \
+            > "$CUBUX_KEYSTORE_FILE"
 
           test -s "$CUBUX_KEYSTORE_FILE"
 
-          gradle --no-daemon --console=plain assembleRelease
-
-          test -f app/build/outputs/apk/release/app-release.apk
+          gradle --no-daemon assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CubuxAudit-2.9-Release
-          path: app/build/outputs/apk/release/app-release.apk
+          name: CubuxSecurity-3.0-Release
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
-          retention-days: 14
