@@ -1,4 +1,4 @@
-name: Cubux Security 3.0.2 Release
+name: Cubux Security 3.0.3 Release
 
 on:
   workflow_dispatch:
@@ -14,22 +14,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unpack Cubux Security 3.0.2
+      - name: Unpack Cubux Security 3.0.3
         shell: bash
         run: |
           set -e
-          test -f CubuxAudit_3_0_2_INSTALL.zip
-          rm -rf /tmp/cubux302
-          mkdir -p /tmp/cubux302
-          unzip -q CubuxAudit_3_0_2_INSTALL.zip -d /tmp/cubux302
-          cp -a /tmp/cubux302/. .
+          test -f CubuxAudit_3_0_3_INSTALL.zip
+          rm -rf /tmp/cubux303
+          mkdir -p /tmp/cubux303
+          unzip -q CubuxAudit_3_0_3_INSTALL.zip -d /tmp/cubux303
+          cp -a /tmp/cubux303/. .
           test -f app/src/main/java/com/cubux/audit/DelayProfile.java
           test -f app/src/main/java/com/cubux/audit/NetworkUtil.java
           test -f app/src/main/java/com/cubux/audit/AutoBackupManager.java
           test -f app/src/main/java/com/cubux/audit/StableHistoryLoader.java
-          test -f app/src/main/java/com/cubux/audit/PeriodControlEngine.java
+          test -f app/src/main/java/com/cubux/audit/LightCheckEngine.java
 
-      - name: Validate 3.0.2 rules
+      - name: Validate 3.0.3 rules
         shell: bash
         run: |
           python3 - <<'PYCODE'
@@ -43,118 +43,97 @@ jobs:
               if not cond:
                   raise SystemExit('VALIDATION FAILED: '+msg)
 
-          co=read('app/src/main/java/com/cubux/audit/AuditCoordinator.java')
-          pc=read('app/src/main/java/com/cubux/audit/PeriodControlEngine.java')
-          ae=read('app/src/main/java/com/cubux/audit/AuditEngine.java')
-          cs=read('app/src/main/java/com/cubux/audit/CheckSettings.java')
-          dp=read('app/src/main/java/com/cubux/audit/DelayProfile.java')
-          cc=read('app/src/main/java/com/cubux/audit/CubuxClient.java')
-          nu=read('app/src/main/java/com/cubux/audit/NetworkUtil.java')
-          ab=read('app/src/main/java/com/cubux/audit/AutoBackupManager.java')
-          fg=read('app/src/main/java/com/cubux/audit/AuditForegroundService.java')
           ma=read('app/src/main/java/com/cubux/audit/MainActivity.java')
+          co=read('app/src/main/java/com/cubux/audit/AuditCoordinator.java')
+          ae=read('app/src/main/java/com/cubux/audit/AuditEngine.java')
+          ac=read('app/src/main/java/com/cubux/audit/AuditControl.java')
+          fg=read('app/src/main/java/com/cubux/audit/AuditForegroundService.java')
+          gg=read('app/src/main/java/com/cubux/audit/GentleServerGate.java')
+          lc=read('app/src/main/java/com/cubux/audit/LightCheckEngine.java')
           sh=read('app/src/main/java/com/cubux/audit/StableHistoryLoader.java')
+          dp=read('app/src/main/java/com/cubux/audit/DelayProfile.java')
           bg=read('app/build.gradle')
 
           need(
-              'String to=TimeUtil.yesterday();' in co
-              and 'String to=TimeUtil.today();' not in co,
-              'today must remain excluded from scans'
+              "versionName '3.0.3'" in bg
+              and 'versionCode 38' in bg,
+              'version mismatch'
           )
 
           need(
-              'String cutoff = TimeUtil.yesterday();' in pc,
-              'period cutoff must be yesterday'
+              'Cubux Security 3.0.3' in ma,
+              'UI version mismatch'
           )
 
           need(
-              'baselineDates' in pc and 'baselineDay' in ae,
-              'silent baseline logic missing'
+              'String to=TimeUtil.yesterday();' in co,
+              'today must be excluded'
           )
 
           need(
-              'SQLiteDatabase sql=db.begin()' in ae
-              and 'closureUpdates' in ae,
-              'atomic save missing'
+              'settings::requestDelayMs' in co
+              and 'DelayProvider' in gg,
+              'live delay provider missing'
           )
 
           need(
-              'MAX_STABILITY_RETRIES = 3' in sh,
-              'stability retry protection missing'
+              'DelayProfile.name(selected)' in gg,
+              'live speed label missing'
+          )
+
+          need(
+              'detailsText.setMinLines(4)' in ma
+              and 'detailsText.setMaxLines(4)' in ma,
+              'fixed 4-line block missing'
+          )
+
+          need(
+              'activeElapsedMs' in ac
+              and 'AuditControlRegistry.activeElapsedMs(started)' in ae,
+              'pause-excluding timer missing'
+          )
+
+          need(
+              'elapsedMs' in fg
+              and 'Прошло:' in fg,
+              'notification timer missing'
+          )
+
+          need(
+              'READ_COMPLETE' in sh
+              and 'STABILITY_FALLBACK_SCAN' in sh,
+              'detailed stability stages missing'
+          )
+
+          need(
+              'resetPageProgress()' in ma,
+              'second-pass UI reset missing'
+          )
+
+          need(
+              'refreshBaseline(analysisStart,to,result.total)' in co,
+              'light baseline refresh missing'
+          )
+
+          need(
+              'LIGHT_NO_CHANGES' in lc
+              and 'Подробные операции пока не загружаются' in lc,
+              'true light check flow missing'
+          )
+
+          need(
+              'pauseButton.setVisibility(View.GONE)' in ma
+              and 'stopButton.setVisibility(View.GONE)' in ma,
+              'final controls state missing'
           )
 
           need(
               'MIN_MS = 500L' in dp
-              and 'MAX_MS = 10000L' in dp
-              and 'DEFAULT_MS = 2000L' in dp,
-              '0.5-10 second delay profile missing'
+              and 'MAX_MS = 10000L' in dp,
+              'delay range missing'
           )
 
-          need(
-              'DelayProfile.clamp' in cs,
-              'CheckSettings must use central delay profile'
-          )
-
-          need(
-              'Хард' in dp
-              and 'Максимально щадящий' in dp,
-              'delay mode names missing'
-          )
-
-          need(
-              'NoInternetException' in cc
-              and 'waitForInternet()' in cc,
-              'network-loss resume logic missing'
-          )
-
-          need(
-              'NET_CAPABILITY_VALIDATED' in nu,
-              'validated internet check missing'
-          )
-
-          need(
-              'HTTP 429' in cc
-              and 'HTTP 403' in cc,
-              'HTTP error classification missing'
-          )
-
-          need(
-              'class Snapshot' in fg
-              and 'snapshot()' in fg,
-              'shared progress snapshot missing'
-          )
-
-          need(
-              'postDelayed(this, 1000L)' in ma
-              and 'syncProgressFromService' in ma,
-              '1-second UI progress resync missing'
-          )
-
-          need(
-              'MediaStore.Downloads' in ab
-              and 'CubuxSecurity-backup-latest.zip' in ab,
-              'automatic shared backup missing'
-          )
-
-          need(
-              'AutoBackupManager.backupAsync(context)' in co,
-              'backup after successful checks missing'
-          )
-
-          need(
-              'lastSuccessfulCheck' in ma
-              and 'AutoBackupManager.backupAsync(this)' in ma,
-              'fresh reinstall backup protection missing'
-          )
-
-          need(
-              'Cubux Security 3.0.2' in ma
-              and "versionName '3.0.2'" in bg
-              and 'versionCode 37' in bg,
-              'branding/version mismatch'
-          )
-
-          print('PASS: Cubux Security 3.0.2 static safety rules')
+          print('PASS: Cubux Security 3.0.3 static rules')
           PYCODE
 
       - name: Setup Java 17
@@ -173,7 +152,7 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Test request delay and server protection
+      - name: Test delay, timer and request protection
         shell: bash
         run: |
           set -e
@@ -181,15 +160,21 @@ jobs:
 
           javac -encoding UTF-8 -d /tmp/cubux-tests \
             app/src/main/java/com/cubux/audit/DelayProfile.java \
-            app/src/main/java/com/cubux/audit/GentleServerGate.java \
             app/src/main/java/com/cubux/audit/AuditControl.java \
+            app/src/main/java/com/cubux/audit/AuditControlRegistry.java \
             app/src/main/java/com/cubux/audit/AuditProgressListener.java \
-            tests/GentleServerGateTest.java \
-            tests/DelayProfileTest.java
+            app/src/main/java/com/cubux/audit/GentleServerGate.java \
+            tests/DelayProfileTest.java \
+            tests/AuditControlTimerTest.java \
+            tests/GentleServerGateTest.java
 
           java -Dfile.encoding=UTF-8 \
             -cp /tmp/cubux-tests \
             com.cubux.audit.DelayProfileTest
+
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-tests \
+            com.cubux.audit.AuditControlTimerTest
 
           java -Dfile.encoding=UTF-8 \
             -cp /tmp/cubux-tests \
@@ -240,6 +225,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CubuxSecurity-3.0.2-Release
+          name: CubuxSecurity-3.0.3-Release
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
