@@ -1,0 +1,245 @@
+name: Cubux Security 3.0.2 Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack Cubux Security 3.0.2
+        shell: bash
+        run: |
+          set -e
+          test -f CubuxAudit_3_0_2_INSTALL.zip
+          rm -rf /tmp/cubux302
+          mkdir -p /tmp/cubux302
+          unzip -q CubuxAudit_3_0_2_INSTALL.zip -d /tmp/cubux302
+          cp -a /tmp/cubux302/. .
+          test -f app/src/main/java/com/cubux/audit/DelayProfile.java
+          test -f app/src/main/java/com/cubux/audit/NetworkUtil.java
+          test -f app/src/main/java/com/cubux/audit/AutoBackupManager.java
+          test -f app/src/main/java/com/cubux/audit/StableHistoryLoader.java
+          test -f app/src/main/java/com/cubux/audit/PeriodControlEngine.java
+
+      - name: Validate 3.0.2 rules
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          root=Path('.')
+
+          def read(p):
+              return (root/p).read_text(encoding='utf-8')
+
+          def need(cond,msg):
+              if not cond:
+                  raise SystemExit('VALIDATION FAILED: '+msg)
+
+          co=read('app/src/main/java/com/cubux/audit/AuditCoordinator.java')
+          pc=read('app/src/main/java/com/cubux/audit/PeriodControlEngine.java')
+          ae=read('app/src/main/java/com/cubux/audit/AuditEngine.java')
+          cs=read('app/src/main/java/com/cubux/audit/CheckSettings.java')
+          dp=read('app/src/main/java/com/cubux/audit/DelayProfile.java')
+          cc=read('app/src/main/java/com/cubux/audit/CubuxClient.java')
+          nu=read('app/src/main/java/com/cubux/audit/NetworkUtil.java')
+          ab=read('app/src/main/java/com/cubux/audit/AutoBackupManager.java')
+          fg=read('app/src/main/java/com/cubux/audit/AuditForegroundService.java')
+          ma=read('app/src/main/java/com/cubux/audit/MainActivity.java')
+          sh=read('app/src/main/java/com/cubux/audit/StableHistoryLoader.java')
+          bg=read('app/build.gradle')
+
+          need(
+              'String to=TimeUtil.yesterday();' in co
+              and 'String to=TimeUtil.today();' not in co,
+              'today must remain excluded from scans'
+          )
+
+          need(
+              'String cutoff = TimeUtil.yesterday();' in pc,
+              'period cutoff must be yesterday'
+          )
+
+          need(
+              'baselineDates' in pc and 'baselineDay' in ae,
+              'silent baseline logic missing'
+          )
+
+          need(
+              'SQLiteDatabase sql=db.begin()' in ae
+              and 'closureUpdates' in ae,
+              'atomic save missing'
+          )
+
+          need(
+              'MAX_STABILITY_RETRIES = 3' in sh,
+              'stability retry protection missing'
+          )
+
+          need(
+              'MIN_MS = 500L' in dp
+              and 'MAX_MS = 10000L' in dp
+              and 'DEFAULT_MS = 2000L' in dp,
+              '0.5-10 second delay profile missing'
+          )
+
+          need(
+              'DelayProfile.clamp' in cs,
+              'CheckSettings must use central delay profile'
+          )
+
+          need(
+              'Хард' in dp
+              and 'Максимально щадящий' in dp,
+              'delay mode names missing'
+          )
+
+          need(
+              'NoInternetException' in cc
+              and 'waitForInternet()' in cc,
+              'network-loss resume logic missing'
+          )
+
+          need(
+              'NET_CAPABILITY_VALIDATED' in nu,
+              'validated internet check missing'
+          )
+
+          need(
+              'HTTP 429' in cc
+              and 'HTTP 403' in cc,
+              'HTTP error classification missing'
+          )
+
+          need(
+              'class Snapshot' in fg
+              and 'snapshot()' in fg,
+              'shared progress snapshot missing'
+          )
+
+          need(
+              'postDelayed(this, 1000L)' in ma
+              and 'syncProgressFromService' in ma,
+              '1-second UI progress resync missing'
+          )
+
+          need(
+              'MediaStore.Downloads' in ab
+              and 'CubuxSecurity-backup-latest.zip' in ab,
+              'automatic shared backup missing'
+          )
+
+          need(
+              'AutoBackupManager.backupAsync(context)' in co,
+              'backup after successful checks missing'
+          )
+
+          need(
+              'lastSuccessfulCheck' in ma
+              and 'AutoBackupManager.backupAsync(this)' in ma,
+              'fresh reinstall backup protection missing'
+          )
+
+          need(
+              'Cubux Security 3.0.2' in ma
+              and "versionName '3.0.2'" in bg
+              and 'versionCode 37' in bg,
+              'branding/version mismatch'
+          )
+
+          print('PASS: Cubux Security 3.0.2 static safety rules')
+          PYCODE
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK 35
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Test request delay and server protection
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/cubux-tests
+
+          javac -encoding UTF-8 -d /tmp/cubux-tests \
+            app/src/main/java/com/cubux/audit/DelayProfile.java \
+            app/src/main/java/com/cubux/audit/GentleServerGate.java \
+            app/src/main/java/com/cubux/audit/AuditControl.java \
+            app/src/main/java/com/cubux/audit/AuditProgressListener.java \
+            tests/GentleServerGateTest.java \
+            tests/DelayProfileTest.java
+
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-tests \
+            com.cubux.audit.DelayProfileTest
+
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-tests \
+            com.cubux.audit.GentleServerGateTest
+
+      - name: Test closed-day cutoff
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/cubux-time-tests
+
+          javac -encoding UTF-8 -d /tmp/cubux-time-tests \
+            app/src/main/java/com/cubux/audit/TimeUtil.java \
+            tests/ClosedDayRulesTest.java
+
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-time-tests \
+            com.cubux.audit.ClosedDayRulesTest
+
+      - name: Build signed release APK
+        env:
+          CUBUX_KEYSTORE_BASE64: ${{ secrets.CUBUX_KEYSTORE_BASE64 }}
+          CUBUX_KEYSTORE_PASSWORD: ${{ secrets.CUBUX_KEYSTORE_PASSWORD }}
+          CUBUX_KEY_ALIAS: ${{ secrets.CUBUX_KEY_ALIAS }}
+          CUBUX_KEY_PASSWORD: ${{ secrets.CUBUX_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -e
+
+          test -n "$CUBUX_KEYSTORE_BASE64"
+          test -n "$CUBUX_KEYSTORE_PASSWORD"
+          test -n "$CUBUX_KEY_ALIAS"
+          test -n "$CUBUX_KEY_PASSWORD"
+
+          export CUBUX_KEYSTORE_FILE="$RUNNER_TEMP/cubux-release.jks"
+
+          trap 'rm -f "$CUBUX_KEYSTORE_FILE"' EXIT
+
+          printf '%s' "$CUBUX_KEYSTORE_BASE64" \
+            | tr -d '[:space:]' \
+            | base64 --decode \
+            > "$CUBUX_KEYSTORE_FILE"
+
+          test -s "$CUBUX_KEYSTORE_FILE"
+
+          gradle --no-daemon assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CubuxSecurity-3.0.2-Release
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
