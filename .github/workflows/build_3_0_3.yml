@@ -1,0 +1,230 @@
+name: Cubux Security 3.0.3 Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack Cubux Security 3.0.3
+        shell: bash
+        run: |
+          set -e
+          test -f CubuxAudit_3_0_3_INSTALL.zip
+          rm -rf /tmp/cubux303
+          mkdir -p /tmp/cubux303
+          unzip -q CubuxAudit_3_0_3_INSTALL.zip -d /tmp/cubux303
+          cp -a /tmp/cubux303/. .
+          test -f app/src/main/java/com/cubux/audit/DelayProfile.java
+          test -f app/src/main/java/com/cubux/audit/NetworkUtil.java
+          test -f app/src/main/java/com/cubux/audit/AutoBackupManager.java
+          test -f app/src/main/java/com/cubux/audit/StableHistoryLoader.java
+          test -f app/src/main/java/com/cubux/audit/LightCheckEngine.java
+
+      - name: Validate 3.0.3 rules
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          root=Path('.')
+
+          def read(p):
+              return (root/p).read_text(encoding='utf-8')
+
+          def need(cond,msg):
+              if not cond:
+                  raise SystemExit('VALIDATION FAILED: '+msg)
+
+          ma=read('app/src/main/java/com/cubux/audit/MainActivity.java')
+          co=read('app/src/main/java/com/cubux/audit/AuditCoordinator.java')
+          ae=read('app/src/main/java/com/cubux/audit/AuditEngine.java')
+          ac=read('app/src/main/java/com/cubux/audit/AuditControl.java')
+          fg=read('app/src/main/java/com/cubux/audit/AuditForegroundService.java')
+          gg=read('app/src/main/java/com/cubux/audit/GentleServerGate.java')
+          lc=read('app/src/main/java/com/cubux/audit/LightCheckEngine.java')
+          sh=read('app/src/main/java/com/cubux/audit/StableHistoryLoader.java')
+          dp=read('app/src/main/java/com/cubux/audit/DelayProfile.java')
+          bg=read('app/build.gradle')
+
+          need(
+              "versionName '3.0.3'" in bg
+              and 'versionCode 38' in bg,
+              'version mismatch'
+          )
+
+          need(
+              'Cubux Security 3.0.3' in ma,
+              'UI version mismatch'
+          )
+
+          need(
+              'String to=TimeUtil.yesterday();' in co,
+              'today must be excluded'
+          )
+
+          need(
+              'settings::requestDelayMs' in co
+              and 'DelayProvider' in gg,
+              'live delay provider missing'
+          )
+
+          need(
+              'DelayProfile.name(selected)' in gg,
+              'live speed label missing'
+          )
+
+          need(
+              'detailsText.setMinLines(4)' in ma
+              and 'detailsText.setMaxLines(4)' in ma,
+              'fixed 4-line block missing'
+          )
+
+          need(
+              'activeElapsedMs' in ac
+              and 'AuditControlRegistry.activeElapsedMs(started)' in ae,
+              'pause-excluding timer missing'
+          )
+
+          need(
+              'elapsedMs' in fg
+              and 'Прошло:' in fg,
+              'notification timer missing'
+          )
+
+          need(
+              'READ_COMPLETE' in sh
+              and 'STABILITY_FALLBACK_SCAN' in sh,
+              'detailed stability stages missing'
+          )
+
+          need(
+              'resetPageProgress()' in ma,
+              'second-pass UI reset missing'
+          )
+
+          need(
+              'refreshBaseline(analysisStart,to,result.total)' in co,
+              'light baseline refresh missing'
+          )
+
+          need(
+              'LIGHT_NO_CHANGES' in lc
+              and 'Подробные операции пока не загружаются' in lc,
+              'true light check flow missing'
+          )
+
+          need(
+              'pauseButton.setVisibility(View.GONE)' in ma
+              and 'stopButton.setVisibility(View.GONE)' in ma,
+              'final controls state missing'
+          )
+
+          need(
+              'MIN_MS = 500L' in dp
+              and 'MAX_MS = 10000L' in dp,
+              'delay range missing'
+          )
+
+          print('PASS: Cubux Security 3.0.3 static rules')
+          PYCODE
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK 35
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Test delay, timer and request protection
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/cubux-tests
+
+          javac -encoding UTF-8 -d /tmp/cubux-tests \
+            app/src/main/java/com/cubux/audit/DelayProfile.java \
+            app/src/main/java/com/cubux/audit/AuditControl.java \
+            app/src/main/java/com/cubux/audit/AuditControlRegistry.java \
+            app/src/main/java/com/cubux/audit/AuditProgressListener.java \
+            app/src/main/java/com/cubux/audit/GentleServerGate.java \
+            tests/DelayProfileTest.java \
+            tests/AuditControlTimerTest.java \
+            tests/GentleServerGateTest.java
+
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-tests \
+            com.cubux.audit.DelayProfileTest
+
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-tests \
+            com.cubux.audit.AuditControlTimerTest
+
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-tests \
+            com.cubux.audit.GentleServerGateTest
+
+      - name: Test closed-day cutoff
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/cubux-time-tests
+
+          javac -encoding UTF-8 -d /tmp/cubux-time-tests \
+            app/src/main/java/com/cubux/audit/TimeUtil.java \
+            tests/ClosedDayRulesTest.java
+
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-time-tests \
+            com.cubux.audit.ClosedDayRulesTest
+
+      - name: Build signed release APK
+        env:
+          CUBUX_KEYSTORE_BASE64: ${{ secrets.CUBUX_KEYSTORE_BASE64 }}
+          CUBUX_KEYSTORE_PASSWORD: ${{ secrets.CUBUX_KEYSTORE_PASSWORD }}
+          CUBUX_KEY_ALIAS: ${{ secrets.CUBUX_KEY_ALIAS }}
+          CUBUX_KEY_PASSWORD: ${{ secrets.CUBUX_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -e
+
+          test -n "$CUBUX_KEYSTORE_BASE64"
+          test -n "$CUBUX_KEYSTORE_PASSWORD"
+          test -n "$CUBUX_KEY_ALIAS"
+          test -n "$CUBUX_KEY_PASSWORD"
+
+          export CUBUX_KEYSTORE_FILE="$RUNNER_TEMP/cubux-release.jks"
+
+          trap 'rm -f "$CUBUX_KEYSTORE_FILE"' EXIT
+
+          printf '%s' "$CUBUX_KEYSTORE_BASE64" \
+            | tr -d '[:space:]' \
+            | base64 --decode \
+            > "$CUBUX_KEYSTORE_FILE"
+
+          test -s "$CUBUX_KEYSTORE_FILE"
+
+          gradle --no-daemon assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CubuxSecurity-3.0.3-Release
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
