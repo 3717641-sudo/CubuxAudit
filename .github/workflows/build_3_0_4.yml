@@ -1,4 +1,4 @@
-name: Cubux Security 3.0.3 Release
+name: Cubux Security 3.0.4 Release
 
 on:
   workflow_dispatch:
@@ -14,22 +14,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unpack Cubux Security 3.0.3
+      - name: Unpack Cubux Security 3.0.4
         shell: bash
         run: |
           set -e
-          test -f CubuxAudit_3_0_3_INSTALL.zip
-          rm -rf /tmp/cubux303
-          mkdir -p /tmp/cubux303
-          unzip -q CubuxAudit_3_0_3_INSTALL.zip -d /tmp/cubux303
-          cp -a /tmp/cubux303/. .
+          test -f CubuxAudit_3_0_4_INSTALL.zip
+          rm -rf /tmp/cubux304
+          mkdir -p /tmp/cubux304
+          unzip -q CubuxAudit_3_0_4_INSTALL.zip -d /tmp/cubux304
+          cp -a /tmp/cubux304/. .
+          test -f app/src/main/java/com/cubux/audit/MonthlyHistoryProbe.java
+          test -f app/src/main/java/com/cubux/audit/StableHistoryLoader.java
+          test -f app/src/main/java/com/cubux/audit/LightCheckEngine.java
           test -f app/src/main/java/com/cubux/audit/DelayProfile.java
           test -f app/src/main/java/com/cubux/audit/NetworkUtil.java
           test -f app/src/main/java/com/cubux/audit/AutoBackupManager.java
-          test -f app/src/main/java/com/cubux/audit/StableHistoryLoader.java
-          test -f app/src/main/java/com/cubux/audit/LightCheckEngine.java
 
-      - name: Validate 3.0.3 rules
+      - name: Validate 3.0.4 rules
         shell: bash
         run: |
           python3 - <<'PYCODE'
@@ -44,96 +45,90 @@ jobs:
                   raise SystemExit('VALIDATION FAILED: '+msg)
 
           ma=read('app/src/main/java/com/cubux/audit/MainActivity.java')
-          co=read('app/src/main/java/com/cubux/audit/AuditCoordinator.java')
-          ae=read('app/src/main/java/com/cubux/audit/AuditEngine.java')
-          ac=read('app/src/main/java/com/cubux/audit/AuditControl.java')
-          fg=read('app/src/main/java/com/cubux/audit/AuditForegroundService.java')
-          gg=read('app/src/main/java/com/cubux/audit/GentleServerGate.java')
-          lc=read('app/src/main/java/com/cubux/audit/LightCheckEngine.java')
           sh=read('app/src/main/java/com/cubux/audit/StableHistoryLoader.java')
+          mh=read('app/src/main/java/com/cubux/audit/MonthlyHistoryProbe.java')
+          lc=read('app/src/main/java/com/cubux/audit/LightCheckEngine.java')
+          cl=read('app/src/main/java/com/cubux/audit/CubuxLoader.java')
+          co=read('app/src/main/java/com/cubux/audit/AuditCoordinator.java')
           dp=read('app/src/main/java/com/cubux/audit/DelayProfile.java')
           bg=read('app/build.gradle')
 
           need(
-              "versionName '3.0.3'" in bg
-              and 'versionCode 38' in bg,
+              "versionName '3.0.4'" in bg
+              and 'versionCode 39' in bg,
               'version mismatch'
           )
 
           need(
-              'Cubux Security 3.0.3' in ma,
+              'Cubux Security 3.0.4' in ma,
               'UI version mismatch'
           )
 
           need(
-              'String to=TimeUtil.yesterday();' in co,
-              'today must be excluded'
+              'detailsText.setMinLines(6)' in ma
+              and 'detailsText.setMaxLines(6)' in ma,
+              '6-line status block missing'
           )
 
           need(
-              'settings::requestDelayMs' in co
-              and 'DelayProvider' in gg,
-              'live delay provider missing'
+              '"STABILITY_START".equals(stage)) return Math.max(current, 3)' in ma,
+              'progress 87% startup bug not fixed'
           )
 
           need(
-              'DelayProfile.name(selected)' in gg,
-              'live speed label missing'
+              'MONTHLY_CONTROL_VERIFY' in ma
+              and 'STABILITY_EMERGENCY' in ma,
+              'monthly stability UI stages missing'
           )
 
           need(
-              'detailsText.setMinLines(4)' in ma
-              and 'detailsText.setMaxLines(4)' in ma,
-              'fixed 4-line block missing'
+              'class MonthlyHistoryProbe' in mh
+              and 'loadProbeSignature()' in cl,
+              'monthly probe missing'
           )
 
           need(
-              'activeElapsedMs' in ac
-              and 'AuditControlRegistry.activeElapsedMs(started)' in ae,
-              'pause-excluding timer missing'
+              'verifyWithMonthlyProbe' in sh
+              and 'stableMonthlyControl' in sh,
+              'monthly full-check stability flow missing'
           )
 
           need(
-              'elapsedMs' in fg
-              and 'Прошло:' in fg,
-              'notification timer missing'
+              'fallbackDoubleRead' in sh
+              and 'STABILITY_EMERGENCY' in sh,
+              'emergency safety fallback missing'
           )
 
           need(
-              'READ_COMPLETE' in sh
-              and 'STABILITY_FALLBACK_SCAN' in sh,
-              'detailed stability stages missing'
+              'runMonthlyControl' in lc
+              and 'light_month_probe' in lc,
+              'light monthly control missing'
           )
 
           need(
-              'resetPageProgress()' in ma,
-              'second-pass UI reset missing'
+              'LIGHT_BASELINE_MIGRATION' in lc
+              and 'matchesLocalBaseline' in lc,
+              'upgrade baseline migration missing'
           )
 
           need(
-              'refreshBaseline(analysisStart,to,result.total)' in co,
-              'light baseline refresh missing'
-          )
-
-          need(
-              'LIGHT_NO_CHANGES' in lc
-              and 'Подробные операции пока не загружаются' in lc,
-              'true light check flow missing'
-          )
-
-          need(
-              'pauseButton.setVisibility(View.GONE)' in ma
-              and 'stopButton.setVisibility(View.GONE)' in ma,
-              'final controls state missing'
+              'getStableMonthlyControl' in co
+              and 'light_month_probe' in co,
+              'reuse of full-check monthly baseline missing'
           )
 
           need(
               'MIN_MS = 500L' in dp
               and 'MAX_MS = 10000L' in dp,
-              'delay range missing'
+              '0.5-10 second delay range missing'
           )
 
-          print('PASS: Cubux Security 3.0.3 static rules')
+          need(
+              'String to=TimeUtil.yesterday();' in co,
+              'today must remain excluded from scans'
+          )
+
+          print('PASS: Cubux Security 3.0.4 static rules')
           PYCODE
 
       - name: Setup Java 17
@@ -225,6 +220,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CubuxSecurity-3.0.3-Release
+          name: CubuxSecurity-3.0.4-Release
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
