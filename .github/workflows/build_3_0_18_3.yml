@@ -1,4 +1,4 @@
-name: Cubux Security 3.0.18.3 Empty Day Scan Hotfix
+name: Cubux Security 3.0.18.4 Home and Notifications Update
 
 on:
   workflow_dispatch:
@@ -14,69 +14,110 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unpack Cubux Security 3.0.18.3
+      - name: Unpack Cubux Security 3.0.18.4
         shell: bash
         run: |
           set -euo pipefail
-          test -f CubuxAudit_3_0_18_3_INSTALL.zip
-          rm -rf /tmp/cubux3183
-          mkdir -p /tmp/cubux3183
-          unzip -q CubuxAudit_3_0_18_3_INSTALL.zip -d /tmp/cubux3183
-          cp -a /tmp/cubux3183/. .
+          test -f CubuxAudit_3_0_18_4_INSTALL.zip
+          rm -rf /tmp/cubux3184
+          mkdir -p /tmp/cubux3184
+          unzip -q CubuxAudit_3_0_18_4_INSTALL.zip -d /tmp/cubux3184
+          cp -a /tmp/cubux3184/. .
 
-      - name: Validate 3.0.18.3 hotfix
+      - name: Validate 3.0.18.4 scope
         shell: bash
         run: |
           set -euo pipefail
           MA=app/src/main/java/com/cubux/audit/MainActivity.java
           DB=app/src/main/java/com/cubux/audit/AuditDb.java
-          CL=app/src/main/java/com/cubux/audit/CubuxLoader.java
+          AF=app/src/main/java/com/cubux/audit/AuditForegroundService.java
+          AR=app/src/main/java/com/cubux/audit/AuditActionReceiver.java
+          NH=app/src/main/java/com/cubux/audit/NotificationHelper.java
           DS=app/src/main/java/com/cubux/audit/DayControlService.java
           DE=app/src/main/java/com/cubux/audit/DayControlEngine.java
+          CL=app/src/main/java/com/cubux/audit/CubuxLoader.java
           AC=app/src/main/java/com/cubux/audit/AuditCoordinator.java
 
-          grep -Fq "versionName '3.0.18.3'" app/build.gradle
-          grep -Fq 'versionCode 56' app/build.gradle
-          grep -Fq 'Cubux Security 3.0.18.3' "$MA"
+          grep -Fq "versionName '3.0.18.4'" app/build.gradle
+          grep -Fq 'versionCode 57' app/build.gradle
+          grep -Fq 'Cubux Security 3.0.18.4' "$MA"
 
-          # Empty Cubux periods are valid: totalCount=0/pageCount=0.
+          # Home design and informative action cards.
+          grep -Fq 'Контроль периодов' "$MA"
+          grep -Fq 'Расписание проверок' "$MA"
+          grep -Fq 'Резервные копии' "$MA"
+          grep -Fq 'homeStatusAction' "$MA"
+          grep -Fq 'closedPeriodsHomeStatus' "$MA"
+          grep -Fq 'scheduleHomeStatus' "$MA"
+          grep -Fq 'backupHomeStatus' "$MA"
+
+          # Closed-period screen is now informative and backed by real DB data.
+          grep -Fq 'ClosureMonthSummary' "$DB"
+          grep -Fq 'closedPeriodChangedCount' "$DB"
+          grep -Fq 'closureMonths' "$DB"
+          grep -Fq 'Все закрытые периоды под контролем' "$MA"
+          grep -Fq 'Есть изменения в закрытых периодах' "$MA"
+
+          # Schedule screen shows both quick and full schedules and next launch.
+          grep -Fq 'Быстрая проверка' "$MA"
+          grep -Fq 'Полная проверка' "$MA"
+          grep -Fq 'Следующая проверка' "$MA"
+          grep -Fq 'Последний автозапуск' "$MA"
+          grep -Fq 'daysText' "$MA"
+
+          # Day-control screen must refresh itself immediately after a scan finishes.
+          grep -Fq 'dayScanWasRunning' "$MA"
+          grep -Fq 'dayLastRenderedScan' "$MA"
+          grep -Fq 'completedNow' "$MA"
+          grep -Fq 'switchPage(PAGE_REPORTS)' "$MA"
+
+          # Compact running notification: Pause OR Resume, plus Stop.
+          grep -Fq 'Проверка на паузе' "$AF"
+          grep -Fq 'modeTitle' "$AF"
+          grep -Fq 'if(paused)b.addAction' "$AF"
+          grep -Fq 'else b.addAction' "$AF"
+          grep -Fq 'Останавливаю проверку…' "$AR"
+
+          # Concise result/day-control notifications.
+          grep -Fq 'showDayControlAlert' "$NH"
+          grep -Fq 'showDayControlError' "$NH"
+          grep -Fq 'clearDayControlWarning' "$NH"
+          grep -Fq 'Дневной контроль не выполнен' "$NH"
+          grep -Fq 'NotificationHelper.showDayControlAlert' "$DS"
+          grep -Fq 'NotificationHelper.showDayControlError' "$DS"
+
+          # Preserve empty-current-day fix from 3.0.18.3.
           grep -Fq 'if (total < 0 || pages < 0 || (total > 0 && pages < 1))' "$CL"
           grep -Fq 'if (total == 0)' "$CL"
           grep -Fq 'return new Result(0, 0, all);' "$CL"
-          grep -Fq 'items != null && items.length() > 0' "$CL"
 
-          # Compact day-scan progress from 3.0.18.2 remains present.
+          # Preserve day-control progress and isolation.
           grep -Fq 'Сканирование…' "$MA"
           grep -Fq 'Не удалось загрузить данные' "$MA"
-          grep -Fq 'Повторить' "$MA"
-          grep -Fq 'dayScanProgressBar' "$MA"
-          grep -Fq 'public static boolean isRunning()' "$DS"
           grep -Fq 'RUNNING.compareAndSet(false, true)' "$DS"
           grep -Fq 'Подключение к Cubux' "$DE"
-          grep -Fq 'Загрузка сегодняшних операций' "$DE"
-          grep -Fq 'Сравнение с предыдущим снимком' "$DE"
-          grep -Fq 'Сохранение результатов' "$DE"
-
-          # Day-control data stays isolated from the reference database.
           grep -Fq 'CREATE TABLE IF NOT EXISTS day_snapshot' "$DB"
           grep -Fq 'CREATE TABLE IF NOT EXISTS day_events' "$DB"
           grep -Fq 'CREATE TABLE IF NOT EXISTS day_scans' "$DB"
 
-          # Preserve safe upgrade path from older app_events schema.
+          # Preserve safe startup migration and stop recovery.
           grep -Fq 'ALTER TABLE app_events ADD COLUMN seen INTEGER NOT NULL DEFAULT 0' "$DB"
           grep -Fq 'CREATE INDEX IF NOT EXISTS idx_app_events_seen ON app_events(seen,id)' "$DB"
+          grep -Fq 'stopStaleRunningRuns' "$DB"
+          grep -Fq 'recoverStoppedAuditUi' "$MA"
+          grep -Fq 'AuditRunGate.release();' "$AC"
+
+          # Main audit must still never scan today.
+          grep -Fq 'String to=TimeUtil.yesterday();' "$AC"
+          grep -Fq 'MIN_MS = 500L' app/src/main/java/com/cubux/audit/DelayProfile.java
+          grep -Fq 'MAX_MS = 10000L' app/src/main/java/com/cubux/audit/DelayProfile.java
 
           if grep -Fq 'DROP TABLE' "$DB"; then
             echo 'VALIDATION FAILED: destructive database migration found'
             exit 1
           fi
 
-          # Main audit still never scans today.
-          grep -Fq 'String to=TimeUtil.yesterday();' "$AC"
-          grep -Fq 'MIN_MS = 500L' app/src/main/java/com/cubux/audit/DelayProfile.java
-          grep -Fq 'MAX_MS = 10000L' app/src/main/java/com/cubux/audit/DelayProfile.java
-
-          echo 'PASS: Cubux Security 3.0.18.3 empty-day hotfix'
+          echo 'PASS: Cubux Security 3.0.18.4 scope validated'
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
@@ -130,6 +171,21 @@ jobs:
             -cp /tmp/cubux-time-tests \
             com.cubux.audit.ClosedDayRulesTest
 
+      - name: Test legacy event migration ordering
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import sqlite3
+          db=sqlite3.connect(':memory:')
+          db.execute('CREATE TABLE app_events(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL,level TEXT NOT NULL,source TEXT NOT NULL,message TEXT NOT NULL)')
+          db.execute('ALTER TABLE app_events ADD COLUMN seen INTEGER NOT NULL DEFAULT 0')
+          db.execute("ALTER TABLE app_events ADD COLUMN category TEXT NOT NULL DEFAULT 'SYSTEM'")
+          db.execute("ALTER TABLE app_events ADD COLUMN action TEXT NOT NULL DEFAULT 'EVENTS'")
+          db.execute('CREATE INDEX idx_app_events_seen ON app_events(seen,id)')
+          print('PASS: legacy app_events migration order')
+          PY
+
       - name: Build signed release APK
         env:
           CUBUX_KEYSTORE_BASE64: ${{ secrets.CUBUX_KEYSTORE_BASE64 }}
@@ -158,6 +214,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CubuxSecurity-3.0.18.3-Release
+          name: CubuxSecurity-3.0.18.4-Release
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
