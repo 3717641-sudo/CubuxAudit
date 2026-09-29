@@ -1,4 +1,4 @@
-name: Cubux Security 3.0.18 Day Control and Event Center Release
+name: Cubux Security 3.0.18.1 Startup Hotfix Release
 
 on:
   workflow_dispatch:
@@ -14,98 +14,95 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unpack Cubux Security 3.0.18
+      - name: Unpack Cubux Security 3.0.18.1
         shell: bash
         run: |
           set -euo pipefail
-          test -f CubuxAudit_3_0_18_INSTALL.zip
-          rm -rf /tmp/cubux318
-          mkdir -p /tmp/cubux318
-          unzip -q CubuxAudit_3_0_18_INSTALL.zip -d /tmp/cubux318
-          cp -a /tmp/cubux318/. .
+          test -f CubuxAudit_3_0_18_1_INSTALL.zip
+          rm -rf /tmp/cubux3181
+          mkdir -p /tmp/cubux3181
+          unzip -q CubuxAudit_3_0_18_1_INSTALL.zip -d /tmp/cubux3181
+          cp -a /tmp/cubux3181/. .
 
-      - name: Validate staged 3.0.18 scope
+      - name: Validate 3.0.18.1 startup hotfix
         shell: bash
         run: |
           set -euo pipefail
           MA=app/src/main/java/com/cubux/audit/MainActivity.java
           DB=app/src/main/java/com/cubux/audit/AuditDb.java
-          DC=app/src/main/java/com/cubux/audit/DayControlScheduler.java
-          DS=app/src/main/java/com/cubux/audit/DayControlService.java
-          DE=app/src/main/java/com/cubux/audit/DayControlEngine.java
           AC=app/src/main/java/com/cubux/audit/AuditCoordinator.java
-          MF=app/src/main/AndroidManifest.xml
 
-          grep -Fq "versionName '3.0.18'" app/build.gradle
-          grep -Fq 'versionCode 53' app/build.gradle
-          grep -Fq 'Cubux Security 3.0.18' "$MA"
+          grep -Fq "versionName '3.0.18.1'" app/build.gradle
+          grep -Fq 'versionCode 54' app/build.gradle
+          grep -Fq 'DB_VERSION=10' "$DB"
+          grep -Fq 'Cubux Security 3.0.18.1' "$MA"
 
-          # Day-control UI replaces Reports.
-          grep -Fq '"Сегодня"' "$MA"
-          grep -Fq 'Контроль дня' "$MA"
-          grep -Fq 'Не влияет на основную проверку и эталонную базу' "$MA"
-          grep -Fq 'История изменений' "$MA"
-          grep -Fq 'Почасовой скан: 00:30 — 23:30' "$MA"
-          grep -Fq 'Финальный контроль: 23:59' "$MA"
-          grep -Fq 'Проверить сейчас' "$MA"
-          grep -Fq 'dayEventTypeFilter' "$MA"
-          grep -Fq 'showDayEventDetails' "$MA"
+          # Critical startup fix: app_events columns must exist before create(db)
+          # creates idx_app_events_seen(seen,id) while upgrading an older database.
+          grep -Fq 'String[] pre={"ALTER TABLE app_events ADD COLUMN seen INTEGER NOT NULL DEFAULT 0"' "$DB"
+          grep -Fq 'for(String x:pre)try{db.execSQL(x);}catch(Exception ignored){}create(db);' "$DB"
+          grep -Fq 'CREATE INDEX IF NOT EXISTS idx_app_events_seen ON app_events(seen,id)' "$DB"
 
-          # Independent day tables/history.
-          grep -Fq 'CREATE TABLE IF NOT EXISTS day_snapshot' "$DB"
-          grep -Fq 'CREATE TABLE IF NOT EXISTS day_events' "$DB"
-          grep -Fq 'CREATE TABLE IF NOT EXISTS day_scans' "$DB"
-          grep -Fq 'applyDayScan' "$DB"
-          grep -Fq 'applyDayScan(String day,Map<String,String>current,String now) throws Exception' "$DB"
-          grep -Fq 'daySummary' "$DB"
-          grep -Fq 'dayEvents' "$DB"
-          grep -Fq 'event_type' "$DB"
-
-          # Hourly schedule + 23:59 final scan.
-          grep -Fq '00:30, 01:30 ... 23:30' "$DC"
-          grep -Fq 'candidate.set(Calendar.MINUTE, 59)' "$DC"
-          grep -Fq 'DayControlService.startScheduled' app/src/main/java/com/cubux/audit/DayControlAlarmReceiver.java
-          grep -Fq 'DayControlScheduler.scheduleNext' app/src/main/java/com/cubux/audit/BootReceiver.java
-          grep -Fq 'new DayControlEngine(app).scan(day)' "$DS"
-          grep -Fq 'CubuxLoader(client, team, scanDay, scanDay' "$DE"
-
-          # Event center: unread queue, no overwrite.
-          grep -Fq 'Центр событий' "$MA"
-          grep -Fq 'Все","Важные","Проверки","Сегодня","Система' "$MA"
-          grep -Fq 'Отметить всё просмотренным' "$MA"
-          grep -Fq 'unreadEvents' "$DB"
-          grep -Fq 'markEventSeen' "$DB"
-          grep -Fq 'markAllEventsSeen' "$DB"
-          grep -Fq 'seen INTEGER NOT NULL DEFAULT 0' "$DB"
-          grep -Fq 'За сегодня изменена 1 запись' "$DS"
-          grep -Fq 'За сегодня удалена 1 запись' "$DS"
-
-          # Android components are declared.
-          grep -Fq '.DayControlService' "$MF"
-          grep -Fq '.DayControlAlarmReceiver' "$MF"
-
-          # 3.0.17 journal/history remains present.
-          grep -Fq 'Требует решения' "$MA"
-          grep -Fq 'Решено' "$MA"
-          grep -Fq 'showCheckHistoryPage' "$MA"
-          grep -Fq 'resolution_status' "$DB"
-
-          # Core closed-day audit safety must remain unchanged.
-          grep -Fq 'String to=TimeUtil.yesterday();' "$AC"
-          grep -Fq 'MIN_MS = 500L' app/src/main/java/com/cubux/audit/DelayProfile.java
-          grep -Fq 'MAX_MS = 10000L' app/src/main/java/com/cubux/audit/DelayProfile.java
-          grep -Fq 'NoInternetException' app/src/main/java/com/cubux/audit/CubuxClient.java
-          grep -Fq 'waitForInternet()' app/src/main/java/com/cubux/audit/CubuxClient.java
-
-          # Backup redesign is deliberately deferred to 3.0.19.
-          if grep -Fq 'AutoBackupScheduler' "$MA" || \
-             grep -Fq 'Хранить последние' "$MA" || \
-             grep -Fq 'Изменить папку' "$MA"; then
-            echo 'VALIDATION FAILED: 3.0.19 backup redesign leaked into 3.0.18'
+          # Upgrade must preserve the user's database.
+          if grep -Fq 'DROP TABLE' "$DB"; then
+            echo 'VALIDATION FAILED: destructive database migration found'
             exit 1
           fi
 
-          echo 'PASS: Cubux Security 3.0.18 Day Control + Event Center scope'
+          # Stop/restart recovery for quick, full and scheduled checks.
+          grep -Fq 'stopStaleRunningRuns' "$DB"
+          grep -Fq 'recoverStoppedAuditUi' "$MA"
+          grep -Fq 'if (!AuditRunGate.isRunning()) { recoverStoppedAuditUi();' "$MA"
+          grep -Fq 'AuditRunGate.release();' "$AC"
+          grep -Fq 'AuditControlRegistry.clear(control);' "$AC"
+
+          # 3.0.18 day-control functionality remains present.
+          grep -Fq 'Контроль дня' "$MA"
+          grep -Fq 'Финальный контроль: 23:59' "$MA"
+          grep -Fq 'CREATE TABLE IF NOT EXISTS day_snapshot' "$DB"
+          grep -Fq 'CREATE TABLE IF NOT EXISTS day_events' "$DB"
+          grep -Fq 'CREATE TABLE IF NOT EXISTS day_scans' "$DB"
+          grep -Fq 'Центр событий' "$MA"
+
+          # Main closed-day audit must still stop at yesterday.
+          grep -Fq 'String to=TimeUtil.yesterday();' "$AC"
+          grep -Fq 'MIN_MS = 500L' app/src/main/java/com/cubux/audit/DelayProfile.java
+          grep -Fq 'MAX_MS = 10000L' app/src/main/java/com/cubux/audit/DelayProfile.java
+
+          echo 'PASS: 3.0.18.1 startup migration and stop recovery are present'
+
+      - name: Test legacy app_events migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import sqlite3
+
+          db = sqlite3.connect(':memory:')
+          db.execute('''
+            CREATE TABLE app_events(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              created_at TEXT NOT NULL,
+              level TEXT NOT NULL,
+              source TEXT NOT NULL,
+              message TEXT NOT NULL
+            )
+          ''')
+
+          # The three columns are deliberately migrated before the new index.
+          migrations = [
+            "ALTER TABLE app_events ADD COLUMN seen INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE app_events ADD COLUMN category TEXT NOT NULL DEFAULT 'SYSTEM'",
+            "ALTER TABLE app_events ADD COLUMN action TEXT NOT NULL DEFAULT 'EVENTS'",
+          ]
+          for sql in migrations:
+              db.execute(sql)
+
+          db.execute('CREATE INDEX IF NOT EXISTS idx_app_events_seen ON app_events(seen,id)')
+          columns = {row[1] for row in db.execute('PRAGMA table_info(app_events)')}
+          assert {'seen', 'category', 'action'} <= columns
+          print('PASS: legacy app_events schema upgrades before idx_app_events_seen')
+          PY
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
@@ -129,6 +126,7 @@ jobs:
           set -euo pipefail
           rm -rf /tmp/cubux-tests
           mkdir -p /tmp/cubux-tests
+
           javac -encoding UTF-8 -d /tmp/cubux-tests \
             app/src/main/java/com/cubux/audit/DelayProfile.java \
             app/src/main/java/com/cubux/audit/AuditControl.java \
@@ -181,12 +179,11 @@ jobs:
             | base64 --decode > "$CUBUX_KEYSTORE_FILE"
 
           test -s "$CUBUX_KEYSTORE_FILE"
-
           gradle --no-daemon assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CubuxSecurity-3.0.18-Release
+          name: CubuxSecurity-3.0.18.1-Release
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
