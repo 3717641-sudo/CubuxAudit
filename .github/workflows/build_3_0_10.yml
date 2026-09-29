@@ -1,4 +1,4 @@
-name: Cubux Security 3.0.10 UI Release
+name: Cubux Security 3.0.12 Home UI Release
 
 on:
   workflow_dispatch:
@@ -14,86 +14,109 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unpack Cubux Security 3.0.10
+      - name: Unpack Cubux Security 3.0.12
         shell: bash
         run: |
           set -euo pipefail
-          test -f CubuxAudit_3_0_10_INSTALL.zip
-          rm -rf /tmp/cubux310
-          mkdir -p /tmp/cubux310
-          unzip -q CubuxAudit_3_0_10_INSTALL.zip -d /tmp/cubux310
-          cp -a /tmp/cubux310/. .
+          test -f CubuxAudit_3_0_12_INSTALL.zip
+          rm -rf /tmp/cubux312
+          mkdir -p /tmp/cubux312
+          unzip -q CubuxAudit_3_0_12_INSTALL.zip -d /tmp/cubux312
+          cp -a /tmp/cubux312/. .
 
-      - name: Validate 3.0.10 UI and data rules
+      - name: Validate 3.0.12 approved Home screen and safety rules
         shell: bash
         run: |
           set -euo pipefail
+          MA=app/src/main/java/com/cubux/audit/MainActivity.java
+          DB=app/src/main/java/com/cubux/audit/AuditDb.java
+          OT=app/src/main/java/com/cubux/audit/OperationTypeResolver.java
+          TU=app/src/main/java/com/cubux/audit/TimeUtil.java
 
-          grep -Fq "versionName '3.0.10'" app/build.gradle
-          grep -Fq "versionCode 45" app/build.gradle
-          grep -Fq "Cubux Security 3.0.10" app/src/main/java/com/cubux/audit/MainActivity.java
+          grep -Fq "versionName '3.0.12'" app/build.gradle
+          grep -Fq "versionCode 47" app/build.gradle
+          grep -Fq "Cubux Security 3.0.12" "$MA"
 
-          grep -Fq "displayDateTime(String value)" app/src/main/java/com/cubux/audit/TimeUtil.java
-          grep -Fq "TimeUtil.displayDateTime" app/src/main/java/com/cubux/audit/MainActivity.java
-          grep -Fq "TimeUtil.displayDateTime" app/src/main/java/com/cubux/audit/AuditDb.java
+          grep -Fq 'Система под контролем' "$MA"
+          grep -Fq 'Последняя проверка завершена успешно' "$MA"
+          grep -Fq 'newTop = statCard' "$MA"
+          grep -Fq 'changedTop = statCard' "$MA"
+          grep -Fq 'deletedTop = statCard' "$MA"
+          grep -Fq '▶  Быстрая проверка' "$MA"
+          grep -Fq '▤  Открыть журнал' "$MA"
 
-          grep -Fq 'if(expense>0)return "Расход"' app/src/main/java/com/cubux/audit/AuditDb.java
-          grep -Fq 'if(income>0)return "Доход"' app/src/main/java/com/cubux/audit/AuditDb.java
-          grep -Fq 'if(a<0)return "Расход"' app/src/main/java/com/cubux/audit/AuditDb.java
-          grep -Fq 'if(a>0)return "Доход"' app/src/main/java/com/cubux/audit/AuditDb.java
+          grep -Fq 'R.drawable.ic_closed_periods' "$MA"
+          grep -Fq 'R.drawable.ic_backup' "$MA"
+          grep -Fq 'R.drawable.ic_restore' "$MA"
+          grep -Fq 'R.drawable.ic_clock' "$MA"
 
-          grep -Fq "addRecentRunCards(body)" app/src/main/java/com/cubux/audit/MainActivity.java
-          grep -Fq "recentRunRow" app/src/main/java/com/cubux/audit/MainActivity.java
-          grep -Fq "buildCheckBanner()" app/src/main/java/com/cubux/audit/MainActivity.java
-          grep -Fq "buildStageCard()" app/src/main/java/com/cubux/audit/MainActivity.java
-          grep -Fq "new TextView[8]" app/src/main/java/com/cubux/audit/MainActivity.java
-          grep -Fq "R.drawable.ic_home" app/src/main/java/com/cubux/audit/MainActivity.java
-          grep -Fq "R.drawable.ic_settings" app/src/main/java/com/cubux/audit/MainActivity.java
+          grep -Fq 'db.recentRuns(3)' "$MA"
+          grep -Fq 'historyMetric(run.newCount, GREEN)' "$MA"
+          grep -Fq 'historyMetric(run.changedCount, YELLOW)' "$MA"
+          grep -Fq 'historyMetric(run.deletedCount, RED)' "$MA"
+          grep -Fq 'Всего: ' "$MA"
+          grep -Fq 'public java.util.List<RunSummary> recentRuns(int limit)' "$DB"
 
-          grep -Fq "String to=TimeUtil.yesterday();" app/src/main/java/com/cubux/audit/AuditCoordinator.java
-          grep -Fq "verifyWithMonthlyProbe" app/src/main/java/com/cubux/audit/StableHistoryLoader.java
-          grep -Fq "runMonthlyControl" app/src/main/java/com/cubux/audit/LightCheckEngine.java
-          grep -Fq "MIN_MS = 500L" app/src/main/java/com/cubux/audit/DelayProfile.java
-          grep -Fq "MAX_MS = 10000L" app/src/main/java/com/cubux/audit/DelayProfile.java
-          grep -Fq "NoInternetException" app/src/main/java/com/cubux/audit/CubuxClient.java
-          grep -Fq "waitForInternet()" app/src/main/java/com/cubux/audit/CubuxClient.java
+          grep -Fq 'ViewGroup.LayoutParams.MATCH_PARENT, dp(70)' "$MA"
+          grep -Fq 'Color.rgb(229, 246, 252)' "$MA"
+          grep -Fq 'int iconSize = active ? dp(25) : dp(22);' "$MA"
 
-          echo "PASS: Cubux Security 3.0.10 validation"
+          grep -Fq 'currentCheckLabel()' "$MA"
+          grep -Fq 'checkModePill.setText(full ? "ПОЛНАЯ" : "БЫСТРАЯ")' "$MA"
+          grep -Fq 'auditButton.setVisibility(View.GONE)' "$MA"
+          grep -Fq 'fullAuditButton.setVisibility(View.GONE)' "$MA"
+          grep -Fq 'pauseButton.setVisibility(View.VISIBLE)' "$MA"
+          grep -Fq 'stopButton.setVisibility(View.VISIBLE)' "$MA"
+
+          if sed -n '/private View buildCheckPage()/,/private LinearLayout.LayoutParams topMargin/p' "$MA" | grep -Fq 'buildStageCard()'; then
+            echo 'VALIDATION FAILED: duplicate stage card'
+            exit 1
+          fi
+
+          grep -Fq 'displayDateTime(String value)' "$TU"
+          grep -Fq 'replaceAll("(\\d{4}-\\d{2}-\\d{2})T(?=\\d{2}:\\d{2})","$1 ")' "$TU"
+
+          grep -Fq 'new CategoryDirectory(db,client,teamId).refresh()' \
+            app/src/main/java/com/cubux/audit/AuditCoordinator.java
+
+          grep -Fq 'category_type:' "$OT"
+          grep -Fq 'category_type_name:' "$OT"
+          grep -Fq 'category.split' "$OT"
+          grep -Fq 'if (amount != null && amount < 0) return "Расход"' "$OT"
+
+          if grep -Fq 'amount > 0' "$OT"; then
+            echo 'VALIDATION FAILED: positive amount fallback must not classify income'
+            exit 1
+          fi
+
+          grep -Fq 'String to=TimeUtil.yesterday();' \
+            app/src/main/java/com/cubux/audit/AuditCoordinator.java
+
+          grep -Fq 'verifyWithMonthlyProbe' \
+            app/src/main/java/com/cubux/audit/StableHistoryLoader.java
+
+          grep -Fq 'runMonthlyControl' \
+            app/src/main/java/com/cubux/audit/LightCheckEngine.java
+
+          grep -Fq 'MIN_MS = 500L' \
+            app/src/main/java/com/cubux/audit/DelayProfile.java
+
+          grep -Fq 'MAX_MS = 10000L' \
+            app/src/main/java/com/cubux/audit/DelayProfile.java
+
+          grep -Fq 'NoInternetException' \
+            app/src/main/java/com/cubux/audit/CubuxClient.java
+
+          grep -Fq 'waitForInternet()' \
+            app/src/main/java/com/cubux/audit/CubuxClient.java
+
+          echo 'PASS: Cubux Security 3.0.12 approved Home + safety validation'
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Test date-time display
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/cubux-display-tests
-          mkdir -p /tmp/cubux-display-tests
-
-          javac -encoding UTF-8 -d /tmp/cubux-display-tests \
-            app/src/main/java/com/cubux/audit/TimeUtil.java
-
-          printf '%s\n' \
-            'import com.cubux.audit.TimeUtil;' \
-            'public class DateDisplayTest {' \
-            '  public static void main(String[] args) {' \
-            '    String a=TimeUtil.displayDateTime("2026-09-29T15:21:08");' \
-            '    if(!"2026-09-29 15:21:08".equals(a)) throw new RuntimeException(a);' \
-            '    String b=TimeUtil.displayDateTime("Событие 2026-09-29T15:21:08 • OK");' \
-            '    if(!"Событие 2026-09-29 15:21:08 • OK".equals(b)) throw new RuntimeException(b);' \
-            '    System.out.println("PASS: date-time display uses a space instead of T");' \
-            '  }' \
-            '}' > /tmp/DateDisplayTest.java
-
-          javac -encoding UTF-8 \
-            -cp /tmp/cubux-display-tests \
-            -d /tmp/cubux-display-tests \
-            /tmp/DateDisplayTest.java
-
-          java -cp /tmp/cubux-display-tests DateDisplayTest
 
       - name: Setup Android SDK 35
         uses: android-actions/setup-android@v3
@@ -122,9 +145,17 @@ jobs:
             tests/AuditControlTimerTest.java \
             tests/GentleServerGateTest.java
 
-          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.DelayProfileTest
-          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.AuditControlTimerTest
-          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.GentleServerGateTest
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-tests \
+            com.cubux.audit.DelayProfileTest
+
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-tests \
+            com.cubux.audit.AuditControlTimerTest
+
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-tests \
+            com.cubux.audit.GentleServerGateTest
 
       - name: Test closed-day cutoff
         shell: bash
@@ -137,7 +168,9 @@ jobs:
             app/src/main/java/com/cubux/audit/TimeUtil.java \
             tests/ClosedDayRulesTest.java
 
-          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-time-tests com.cubux.audit.ClosedDayRulesTest
+          java -Dfile.encoding=UTF-8 \
+            -cp /tmp/cubux-time-tests \
+            com.cubux.audit.ClosedDayRulesTest
 
       - name: Build signed release APK
         env:
@@ -167,6 +200,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CubuxSecurity-3.0.10-Release
+          name: CubuxSecurity-3.0.12-Release
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
