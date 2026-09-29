@@ -1,0 +1,89 @@
+name: Cubux Security 3.0.10 UI Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack Cubux Security 3.0.10
+        shell: bash
+        run: |
+          set -e
+          test -f CubuxAudit_3_0_10_INSTALL.zip
+          rm -rf /tmp/cubux310
+          mkdir -p /tmp/cubux310
+          unzip -q CubuxAudit_3_0_10_INSTALL.zip -d /tmp/cubux310
+          cp -a /tmp/cubux310/. .
+
+      - name: Validate 3.0.10 UI and date-time display rules
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          root=Path('.')
+          def read(p): return (root/p).read_text(encoding='utf-8')
+          def need(c,m):
+              if not c: raise SystemExit('VALIDATION FAILED: '+m)
+
+          bg=read('app/build.gradle')
+          ma=read('app/src/main/java/com/cubux/audit/MainActivity.java')
+          db=read('app/src/main/java/com/cubux/audit/AuditDb.java')
+          tu=read('app/src/main/java/com/cubux/audit/TimeUtil.java')
+          ac=read('app/src/main/java/com/cubux/audit/AuditCoordinator.java')
+          sh=read('app/src/main/java/com/cubux/audit/StableHistoryLoader.java')
+          lc=read('app/src/main/java/com/cubux/audit/LightCheckEngine.java')
+          dp=read('app/src/main/java/com/cubux/audit/DelayProfile.java')
+          cc=read('app/src/main/java/com/cubux/audit/CubuxClient.java')
+
+          need("versionName '3.0.10'" in bg and 'versionCode 45' in bg,
+               'version mismatch')
+          need('Cubux Security 3.0.10' in ma,
+               'UI version mismatch')
+
+          # Storage stays ISO-safe, while all visible date-time strings replace T with a space.
+          need('yyyy-MM-dd\'T\'HH:mm:ss' in tu,
+               'internal ISO storage format must stay unchanged')
+          need('displayDateTime(String value)' in tu,
+               'date-time display formatter missing')
+          need('replaceAll("(\\\\d{4}-\\\\d{2}-\\\\d{2})T(?=\\\\d{2}:\\\\d{2})","$1 ")' in tu,
+               'date-time T-to-space conversion missing')
+          need('TimeUtil.displayDateTime(c.getString(1))' in db,
+               'run history date-time is not normalized')
+          need('TimeUtil.displayDateTime(detected)' in db,
+               'journal/diagnostics date-time is not normalized')
+          need('TimeUtil.displayDateTime(c.getString(0))' in db,
+               'event-center date-time is not normalized')
+          need('v.setText(TimeUtil.displayDateTime(value))' in ma,
+               'global UI text boundary does not normalize date-time')
+          need('lastCheckText.setText(TimeUtil.displayDateTime(x.toString()))' in ma,
+               'last-check card still exposes ISO T')
+
+          # Operation type must resolve normal Cubux records to income/expense.
+          need('if(expense>0)return "Расход"' in db,
+               'expense field fallback missing')
+          need('if(income>0)return "Доход"' in db,
+               'income field fallback missing')
+          need('if(a<0)return "Расход"' in db and 'if(a>0)return "Доход"' in db,
+               'amount-sign income/expense fallback missing')
+
+          # 3.0.10 visual corrections retained.
+          need('addRecentRunCards(body)' in ma and 'recentRunRow' in ma,
+               'separate history cards missing')
+          need('R.drawable.ic_home' in ma and 'R.drawable.ic_settings' in ma,
+               'vector bottom-navigation icons missing')
+          need('buildCheckBanner()' in ma and 'buildStageCard()' in ma,
+               'structured check screen missing')
+          need('new TextView[8]' in ma,
+               '8-stage checklist missing')
+
+          # Core audit safety must remain untouched.
+          need('String to=
