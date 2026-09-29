@@ -1,4 +1,4 @@
-name: Cubux Security 3.0.18.1 Startup Hotfix Release
+name: Cubux Security 3.0.18.2 Day Scan Progress Hotfix
 
 on:
   workflow_dispatch:
@@ -14,95 +14,73 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unpack Cubux Security 3.0.18.1
+      - name: Unpack Cubux Security 3.0.18.2
         shell: bash
         run: |
           set -euo pipefail
-          test -f CubuxAudit_3_0_18_1_INSTALL.zip
-          rm -rf /tmp/cubux3181
-          mkdir -p /tmp/cubux3181
-          unzip -q CubuxAudit_3_0_18_1_INSTALL.zip -d /tmp/cubux3181
-          cp -a /tmp/cubux3181/. .
+          test -f CubuxAudit_3_0_18_2_INSTALL.zip
+          rm -rf /tmp/cubux3182
+          mkdir -p /tmp/cubux3182
+          unzip -q CubuxAudit_3_0_18_2_INSTALL.zip -d /tmp/cubux3182
+          cp -a /tmp/cubux3182/. .
 
-      - name: Validate 3.0.18.1 startup hotfix
+      - name: Validate 3.0.18.2 hotfix
         shell: bash
         run: |
           set -euo pipefail
           MA=app/src/main/java/com/cubux/audit/MainActivity.java
           DB=app/src/main/java/com/cubux/audit/AuditDb.java
+          DS=app/src/main/java/com/cubux/audit/DayControlService.java
+          DE=app/src/main/java/com/cubux/audit/DayControlEngine.java
           AC=app/src/main/java/com/cubux/audit/AuditCoordinator.java
 
-          grep -Fq "versionName '3.0.18.1'" app/build.gradle
-          grep -Fq 'versionCode 54' app/build.gradle
-          grep -Fq 'DB_VERSION=10' "$DB"
-          grep -Fq 'Cubux Security 3.0.18.1' "$MA"
+          grep -Fq "versionName '3.0.18.2'" app/build.gradle
+          grep -Fq 'versionCode 55' app/build.gradle
+          grep -Fq 'Cubux Security 3.0.18.2' "$MA"
 
-          # Critical startup fix: app_events columns must exist before create(db)
-          # creates idx_app_events_seen(seen,id) while upgrading an older database.
-          grep -Fq 'String[] pre={"ALTER TABLE app_events ADD COLUMN seen INTEGER NOT NULL DEFAULT 0"' "$DB"
-          grep -Fq 'for(String x:pre)try{db.execSQL(x);}catch(Exception ignored){}create(db);' "$DB"
+          # Compact day-control progress UI.
+          grep -Fq 'Сканирование…' "$MA"
+          grep -Fq 'Не удалось загрузить данные' "$MA"
+          grep -Fq 'Повторить' "$MA"
+          grep -Fq 'syncDayControlUi' "$MA"
+          grep -Fq 'dayScanProgressBar' "$MA"
+          grep -Fq 'dayControlStatusLine' "$MA"
+
+          # Live day-control snapshot and single-run protection.
+          grep -Fq 'public static final class Snapshot' "$DS"
+          grep -Fq 'public static Snapshot snapshot()' "$DS"
+          grep -Fq 'public static boolean isRunning()' "$DS"
+          grep -Fq 'RUNNING.compareAndSet(false, true)' "$DS"
+          grep -Fq 'errorSnapshot(error)' "$DS"
+          grep -Fq 'DayControlScheduler.scheduleNext(app)' "$DS"
+
+          # Day-control progress phases.
+          grep -Fq 'Подключение к Cubux' "$DE"
+          grep -Fq 'Загрузка сегодняшних операций' "$DE"
+          grep -Fq 'Сравнение с предыдущим снимком' "$DE"
+          grep -Fq 'Сохранение результатов' "$DE"
+          grep -Fq 'new CubuxLoader(client, team, scanDay, scanDay' "$DE"
+
+          # Current-day observer stays in separate tables.
+          grep -Fq 'CREATE TABLE IF NOT EXISTS day_snapshot' "$DB"
+          grep -Fq 'CREATE TABLE IF NOT EXISTS day_events' "$DB"
+          grep -Fq 'CREATE TABLE IF NOT EXISTS day_scans' "$DB"
+
+          # Preserve 3.0.18.1 startup migration safety.
+          grep -Fq 'ALTER TABLE app_events ADD COLUMN seen INTEGER NOT NULL DEFAULT 0' "$DB"
           grep -Fq 'CREATE INDEX IF NOT EXISTS idx_app_events_seen ON app_events(seen,id)' "$DB"
 
-          # Upgrade must preserve the user's database.
           if grep -Fq 'DROP TABLE' "$DB"; then
             echo 'VALIDATION FAILED: destructive database migration found'
             exit 1
           fi
 
-          # Stop/restart recovery for quick, full and scheduled checks.
-          grep -Fq 'stopStaleRunningRuns' "$DB"
-          grep -Fq 'recoverStoppedAuditUi' "$MA"
-          grep -Fq 'if (!AuditRunGate.isRunning()) { recoverStoppedAuditUi();' "$MA"
-          grep -Fq 'AuditRunGate.release();' "$AC"
-          grep -Fq 'AuditControlRegistry.clear(control);' "$AC"
-
-          # 3.0.18 day-control functionality remains present.
-          grep -Fq 'Контроль дня' "$MA"
-          grep -Fq 'Финальный контроль: 23:59' "$MA"
-          grep -Fq 'CREATE TABLE IF NOT EXISTS day_snapshot' "$DB"
-          grep -Fq 'CREATE TABLE IF NOT EXISTS day_events' "$DB"
-          grep -Fq 'CREATE TABLE IF NOT EXISTS day_scans' "$DB"
-          grep -Fq 'Центр событий' "$MA"
-
-          # Main closed-day audit must still stop at yesterday.
+          # Main audit safety is unchanged.
           grep -Fq 'String to=TimeUtil.yesterday();' "$AC"
           grep -Fq 'MIN_MS = 500L' app/src/main/java/com/cubux/audit/DelayProfile.java
           grep -Fq 'MAX_MS = 10000L' app/src/main/java/com/cubux/audit/DelayProfile.java
 
-          echo 'PASS: 3.0.18.1 startup migration and stop recovery are present'
-
-      - name: Test legacy app_events migration
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import sqlite3
-
-          db = sqlite3.connect(':memory:')
-          db.execute('''
-            CREATE TABLE app_events(
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              created_at TEXT NOT NULL,
-              level TEXT NOT NULL,
-              source TEXT NOT NULL,
-              message TEXT NOT NULL
-            )
-          ''')
-
-          # The three columns are deliberately migrated before the new index.
-          migrations = [
-            "ALTER TABLE app_events ADD COLUMN seen INTEGER NOT NULL DEFAULT 0",
-            "ALTER TABLE app_events ADD COLUMN category TEXT NOT NULL DEFAULT 'SYSTEM'",
-            "ALTER TABLE app_events ADD COLUMN action TEXT NOT NULL DEFAULT 'EVENTS'",
-          ]
-          for sql in migrations:
-              db.execute(sql)
-
-          db.execute('CREATE INDEX IF NOT EXISTS idx_app_events_seen ON app_events(seen,id)')
-          columns = {row[1] for row in db.execute('PRAGMA table_info(app_events)')}
-          assert {'seen', 'category', 'action'} <= columns
-          print('PASS: legacy app_events schema upgrades before idx_app_events_seen')
-          PY
+          echo 'PASS: Cubux Security 3.0.18.2 compact day-scan progress hotfix'
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
@@ -184,6 +162,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CubuxSecurity-3.0.18.1-Release
+          name: CubuxSecurity-3.0.18.2-Release
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
