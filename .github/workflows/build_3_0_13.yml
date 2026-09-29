@@ -1,4 +1,4 @@
-name: Cubux Security 3.0.12 Home UI Release
+name: Cubux Security 3.0.13 Approved Home Release
 
 on:
   workflow_dispatch:
@@ -14,17 +14,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unpack Cubux Security 3.0.12
+      - name: Unpack Cubux Security 3.0.13
         shell: bash
         run: |
           set -euo pipefail
-          test -f CubuxAudit_3_0_12_INSTALL.zip
-          rm -rf /tmp/cubux312
-          mkdir -p /tmp/cubux312
-          unzip -q CubuxAudit_3_0_12_INSTALL.zip -d /tmp/cubux312
-          cp -a /tmp/cubux312/. .
+          test -f CubuxAudit_3_0_13_INSTALL.zip
+          rm -rf /tmp/cubux313
+          mkdir -p /tmp/cubux313
+          unzip -q CubuxAudit_3_0_13_INSTALL.zip -d /tmp/cubux313
+          cp -a /tmp/cubux313/. .
 
-      - name: Validate 3.0.12 approved Home screen and safety rules
+      - name: Validate 3.0.13 approved Home and safety rules
         shell: bash
         run: |
           set -euo pipefail
@@ -33,9 +33,9 @@ jobs:
           OT=app/src/main/java/com/cubux/audit/OperationTypeResolver.java
           TU=app/src/main/java/com/cubux/audit/TimeUtil.java
 
-          grep -Fq "versionName '3.0.12'" app/build.gradle
-          grep -Fq "versionCode 47" app/build.gradle
-          grep -Fq "Cubux Security 3.0.12" "$MA"
+          grep -Fq "versionName '3.0.13'" app/build.gradle
+          grep -Fq "versionCode 48" app/build.gradle
+          grep -Fq "Cubux Security 3.0.13" "$MA"
 
           grep -Fq 'Система под контролем' "$MA"
           grep -Fq 'Последняя проверка завершена успешно' "$MA"
@@ -50,16 +50,34 @@ jobs:
           grep -Fq 'R.drawable.ic_restore' "$MA"
           grep -Fq 'R.drawable.ic_clock' "$MA"
 
+          grep -Fq 'ViewGroup.LayoutParams.MATCH_PARENT, dp(54)' "$MA"
+          grep -Fq 'ViewGroup.LayoutParams.MATCH_PARENT, dp(68)' "$MA"
+          grep -Fq 'ViewGroup.LayoutParams.MATCH_PARENT, dp(72)' "$MA"
+          grep -Fq 'new LinearLayout.LayoutParams(0,dp(52),1)' "$MA"
+          grep -Fq 'new LinearLayout.LayoutParams(0,dp(58),1)' "$MA"
+          grep -Fq 'RelativeSizeSpan(1.55f)' "$MA"
+          grep -Fq 'Color.rgb(229, 246, 252)' "$MA"
+
           grep -Fq 'db.recentRuns(3)' "$MA"
           grep -Fq 'historyMetric(run.newCount, GREEN)' "$MA"
           grep -Fq 'historyMetric(run.changedCount, YELLOW)' "$MA"
           grep -Fq 'historyMetric(run.deletedCount, RED)' "$MA"
-          grep -Fq 'Всего: ' "$MA"
-          grep -Fq 'public java.util.List<RunSummary> recentRuns(int limit)' "$DB"
 
-          grep -Fq 'ViewGroup.LayoutParams.MATCH_PARENT, dp(70)' "$MA"
-          grep -Fq 'Color.rgb(229, 246, 252)' "$MA"
-          grep -Fq 'int iconSize = active ? dp(25) : dp(22);' "$MA"
+          if grep -Fq 'historyMetric(run.multi' "$MA"; then
+            echo 'VALIDATION FAILED: fourth Home history indicator found'
+            exit 1
+          fi
+
+          grep -Fq 'public int transactionCount()' "$DB"
+          grep -Fq 'SELECT id,started_at,finished_at,duration_ms,total_records' "$DB"
+          grep -Fq 'endMs>startMs' "$DB"
+          grep -Fq 'run.total > 0 ? run.total : db.transactionCount()' "$MA"
+          grep -Fq 'runDurationLine(status, run.durationMs)' "$MA"
+
+          grep -Fq 'R.drawable.ic_journal' "$MA"
+          grep -Fq 'int iconSize = active ? dp(24) : dp(21);' "$MA"
+          grep -Fq 'rounded(Color.rgb(229, 246, 252), 15)' "$MA"
+          grep -Fq 'strokeWidth="1.8"' app/src/main/res/drawable/ic_journal.xml
 
           grep -Fq 'currentCheckLabel()' "$MA"
           grep -Fq 'checkModePill.setText(full ? "ПОЛНАЯ" : "БЫСТРАЯ")' "$MA"
@@ -81,7 +99,6 @@ jobs:
 
           grep -Fq 'category_type:' "$OT"
           grep -Fq 'category_type_name:' "$OT"
-          grep -Fq 'category.split' "$OT"
           grep -Fq 'if (amount != null && amount < 0) return "Расход"' "$OT"
 
           if grep -Fq 'amount > 0' "$OT"; then
@@ -110,7 +127,7 @@ jobs:
           grep -Fq 'waitForInternet()' \
             app/src/main/java/com/cubux/audit/CubuxClient.java
 
-          echo 'PASS: Cubux Security 3.0.12 approved Home + safety validation'
+          echo 'PASS: Cubux Security 3.0.13 approved Home + safety validation'
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
@@ -200,6 +217,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CubuxSecurity-3.0.12-Release
+          name: CubuxSecurity-3.0.13-Release
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
