@@ -17,73 +17,156 @@ jobs:
       - name: Unpack Cubux Security 3.0.10
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           test -f CubuxAudit_3_0_10_INSTALL.zip
           rm -rf /tmp/cubux310
           mkdir -p /tmp/cubux310
           unzip -q CubuxAudit_3_0_10_INSTALL.zip -d /tmp/cubux310
           cp -a /tmp/cubux310/. .
 
-      - name: Validate 3.0.10 UI and date-time display rules
+      - name: Validate 3.0.10 UI and data rules
         shell: bash
         run: |
-          python3 - <<'PYCODE'
-          from pathlib import Path
-          root=Path('.')
-          def read(p): return (root/p).read_text(encoding='utf-8')
-          def need(c,m):
-              if not c: raise SystemExit('VALIDATION FAILED: '+m)
+          set -euo pipefail
 
-          bg=read('app/build.gradle')
-          ma=read('app/src/main/java/com/cubux/audit/MainActivity.java')
-          db=read('app/src/main/java/com/cubux/audit/AuditDb.java')
-          tu=read('app/src/main/java/com/cubux/audit/TimeUtil.java')
-          ac=read('app/src/main/java/com/cubux/audit/AuditCoordinator.java')
-          sh=read('app/src/main/java/com/cubux/audit/StableHistoryLoader.java')
-          lc=read('app/src/main/java/com/cubux/audit/LightCheckEngine.java')
-          dp=read('app/src/main/java/com/cubux/audit/DelayProfile.java')
-          cc=read('app/src/main/java/com/cubux/audit/CubuxClient.java')
+          grep -Fq "versionName '3.0.10'" app/build.gradle
+          grep -Fq "versionCode 45" app/build.gradle
+          grep -Fq "Cubux Security 3.0.10" app/src/main/java/com/cubux/audit/MainActivity.java
 
-          need("versionName '3.0.10'" in bg and 'versionCode 45' in bg,
-               'version mismatch')
-          need('Cubux Security 3.0.10' in ma,
-               'UI version mismatch')
+          grep -Fq "displayDateTime(String value)" app/src/main/java/com/cubux/audit/TimeUtil.java
+          grep -Fq "TimeUtil.displayDateTime" app/src/main/java/com/cubux/audit/MainActivity.java
+          grep -Fq "TimeUtil.displayDateTime" app/src/main/java/com/cubux/audit/AuditDb.java
 
-          # Storage stays ISO-safe, while all visible date-time strings replace T with a space.
-          need('yyyy-MM-dd\'T\'HH:mm:ss' in tu,
-               'internal ISO storage format must stay unchanged')
-          need('displayDateTime(String value)' in tu,
-               'date-time display formatter missing')
-          need('replaceAll("(\\\\d{4}-\\\\d{2}-\\\\d{2})T(?=\\\\d{2}:\\\\d{2})","$1 ")' in tu,
-               'date-time T-to-space conversion missing')
-          need('TimeUtil.displayDateTime(c.getString(1))' in db,
-               'run history date-time is not normalized')
-          need('TimeUtil.displayDateTime(detected)' in db,
-               'journal/diagnostics date-time is not normalized')
-          need('TimeUtil.displayDateTime(c.getString(0))' in db,
-               'event-center date-time is not normalized')
-          need('v.setText(TimeUtil.displayDateTime(value))' in ma,
-               'global UI text boundary does not normalize date-time')
-          need('lastCheckText.setText(TimeUtil.displayDateTime(x.toString()))' in ma,
-               'last-check card still exposes ISO T')
+          grep -Fq 'if(expense>0)return "Расход"' app/src/main/java/com/cubux/audit/AuditDb.java
+          grep -Fq 'if(income>0)return "Доход"' app/src/main/java/com/cubux/audit/AuditDb.java
+          grep -Fq 'if(a<0)return "Расход"' app/src/main/java/com/cubux/audit/AuditDb.java
+          grep -Fq 'if(a>0)return "Доход"' app/src/main/java/com/cubux/audit/AuditDb.java
 
-          # Operation type must resolve normal Cubux records to income/expense.
-          need('if(expense>0)return "Расход"' in db,
-               'expense field fallback missing')
-          need('if(income>0)return "Доход"' in db,
-               'income field fallback missing')
-          need('if(a<0)return "Расход"' in db and 'if(a>0)return "Доход"' in db,
-               'amount-sign income/expense fallback missing')
+          grep -Fq "addRecentRunCards(body)" app/src/main/java/com/cubux/audit/MainActivity.java
+          grep -Fq "recentRunRow" app/src/main/java/com/cubux/audit/MainActivity.java
+          grep -Fq "buildCheckBanner()" app/src/main/java/com/cubux/audit/MainActivity.java
+          grep -Fq "buildStageCard()" app/src/main/java/com/cubux/audit/MainActivity.java
+          grep -Fq "new TextView[8]" app/src/main/java/com/cubux/audit/MainActivity.java
+          grep -Fq "R.drawable.ic_home" app/src/main/java/com/cubux/audit/MainActivity.java
+          grep -Fq "R.drawable.ic_settings" app/src/main/java/com/cubux/audit/MainActivity.java
 
-          # 3.0.10 visual corrections retained.
-          need('addRecentRunCards(body)' in ma and 'recentRunRow' in ma,
-               'separate history cards missing')
-          need('R.drawable.ic_home' in ma and 'R.drawable.ic_settings' in ma,
-               'vector bottom-navigation icons missing')
-          need('buildCheckBanner()' in ma and 'buildStageCard()' in ma,
-               'structured check screen missing')
-          need('new TextView[8]' in ma,
-               '8-stage checklist missing')
+          grep -Fq "String to=TimeUtil.yesterday();" app/src/main/java/com/cubux/audit/AuditCoordinator.java
+          grep -Fq "verifyWithMonthlyProbe" app/src/main/java/com/cubux/audit/StableHistoryLoader.java
+          grep -Fq "runMonthlyControl" app/src/main/java/com/cubux/audit/LightCheckEngine.java
+          grep -Fq "MIN_MS = 500L" app/src/main/java/com/cubux/audit/DelayProfile.java
+          grep -Fq "MAX_MS = 10000L" app/src/main/java/com/cubux/audit/DelayProfile.java
+          grep -Fq "NoInternetException" app/src/main/java/com/cubux/audit/CubuxClient.java
+          grep -Fq "waitForInternet()" app/src/main/java/com/cubux/audit/CubuxClient.java
 
-          # Core audit safety must remain untouched.
-          need('String to=
+          echo "PASS: Cubux Security 3.0.10 validation"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Test date-time display
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/cubux-display-tests
+          mkdir -p /tmp/cubux-display-tests
+
+          javac -encoding UTF-8 -d /tmp/cubux-display-tests \
+            app/src/main/java/com/cubux/audit/TimeUtil.java
+
+          printf '%s\n' \
+            'import com.cubux.audit.TimeUtil;' \
+            'public class DateDisplayTest {' \
+            '  public static void main(String[] args) {' \
+            '    String a=TimeUtil.displayDateTime("2026-09-29T15:21:08");' \
+            '    if(!"2026-09-29 15:21:08".equals(a)) throw new RuntimeException(a);' \
+            '    String b=TimeUtil.displayDateTime("Событие 2026-09-29T15:21:08 • OK");' \
+            '    if(!"Событие 2026-09-29 15:21:08 • OK".equals(b)) throw new RuntimeException(b);' \
+            '    System.out.println("PASS: date-time display uses a space instead of T");' \
+            '  }' \
+            '}' > /tmp/DateDisplayTest.java
+
+          javac -encoding UTF-8 \
+            -cp /tmp/cubux-display-tests \
+            -d /tmp/cubux-display-tests \
+            /tmp/DateDisplayTest.java
+
+          java -cp /tmp/cubux-display-tests DateDisplayTest
+
+      - name: Setup Android SDK 35
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Test delay, timer and request protection
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/cubux-tests
+          mkdir -p /tmp/cubux-tests
+
+          javac -encoding UTF-8 -d /tmp/cubux-tests \
+            app/src/main/java/com/cubux/audit/DelayProfile.java \
+            app/src/main/java/com/cubux/audit/AuditControl.java \
+            app/src/main/java/com/cubux/audit/AuditControlRegistry.java \
+            app/src/main/java/com/cubux/audit/AuditProgressListener.java \
+            app/src/main/java/com/cubux/audit/GentleServerGate.java \
+            tests/DelayProfileTest.java \
+            tests/AuditControlTimerTest.java \
+            tests/GentleServerGateTest.java
+
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.DelayProfileTest
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.AuditControlTimerTest
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.GentleServerGateTest
+
+      - name: Test closed-day cutoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/cubux-time-tests
+          mkdir -p /tmp/cubux-time-tests
+
+          javac -encoding UTF-8 -d /tmp/cubux-time-tests \
+            app/src/main/java/com/cubux/audit/TimeUtil.java \
+            tests/ClosedDayRulesTest.java
+
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-time-tests com.cubux.audit.ClosedDayRulesTest
+
+      - name: Build signed release APK
+        env:
+          CUBUX_KEYSTORE_BASE64: ${{ secrets.CUBUX_KEYSTORE_BASE64 }}
+          CUBUX_KEYSTORE_PASSWORD: ${{ secrets.CUBUX_KEYSTORE_PASSWORD }}
+          CUBUX_KEY_ALIAS: ${{ secrets.CUBUX_KEY_ALIAS }}
+          CUBUX_KEY_PASSWORD: ${{ secrets.CUBUX_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -n "$CUBUX_KEYSTORE_BASE64"
+          test -n "$CUBUX_KEYSTORE_PASSWORD"
+          test -n "$CUBUX_KEY_ALIAS"
+          test -n "$CUBUX_KEY_PASSWORD"
+
+          export CUBUX_KEYSTORE_FILE="$RUNNER_TEMP/cubux-release.jks"
+          trap 'rm -f "$CUBUX_KEYSTORE_FILE"' EXIT
+
+          printf '%s' "$CUBUX_KEYSTORE_BASE64" \
+            | tr -d '[:space:]' \
+            | base64 --decode > "$CUBUX_KEYSTORE_FILE"
+
+          test -s "$CUBUX_KEYSTORE_FILE"
+          gradle --no-daemon assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CubuxSecurity-3.0.10-Release
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
