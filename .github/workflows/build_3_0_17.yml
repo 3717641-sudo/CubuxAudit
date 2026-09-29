@@ -67,8 +67,11 @@ jobs:
           grep -Fq 'Экспорт базы\nи SHA-256' "$MA"
           grep -Fq 'Импорт из\nрезервной копии' "$MA"
 
-          if grep -Fq 'AutoBackupScheduler' "$MA"; then
-            echo 'VALIDATION FAILED: future backup UI leaked into 3.0.17'
+          if grep -Fq 'AutoBackupScheduler' "$MA" || \
+             grep -Fq 'AutoBackupManager.enabled' "$MA" || \
+             grep -Fq 'AutoBackupManager.intervalDays' "$MA" || \
+             grep -Fq 'confirmRestore(uri)' "$MA"; then
+            echo 'VALIDATION FAILED: unfinished backup/restore code leaked into 3.0.17'
             exit 1
           fi
 
@@ -148,6 +151,7 @@ jobs:
           test -n "$CUBUX_KEY_PASSWORD"
 
           export CUBUX_KEYSTORE_FILE="$RUNNER_TEMP/cubux-release.jks"
+
           trap 'rm -f "$CUBUX_KEYSTORE_FILE"' EXIT
 
           printf '%s' "$CUBUX_KEYSTORE_BASE64" \
