@@ -40,6 +40,7 @@ jobs:
           grep -Fq 'versionCode 53' app/build.gradle
           grep -Fq 'Cubux Security 3.0.18' "$MA"
 
+          # Day-control UI replaces Reports.
           grep -Fq '"Сегодня"' "$MA"
           grep -Fq 'Контроль дня' "$MA"
           grep -Fq 'Не влияет на основную проверку и эталонную базу' "$MA"
@@ -50,14 +51,17 @@ jobs:
           grep -Fq 'dayEventTypeFilter' "$MA"
           grep -Fq 'showDayEventDetails' "$MA"
 
+          # Independent day tables/history.
           grep -Fq 'CREATE TABLE IF NOT EXISTS day_snapshot' "$DB"
           grep -Fq 'CREATE TABLE IF NOT EXISTS day_events' "$DB"
           grep -Fq 'CREATE TABLE IF NOT EXISTS day_scans' "$DB"
           grep -Fq 'applyDayScan' "$DB"
+          grep -Fq 'applyDayScan(String day,Map<String,String>current,String now) throws Exception' "$DB"
           grep -Fq 'daySummary' "$DB"
           grep -Fq 'dayEvents' "$DB"
           grep -Fq 'event_type' "$DB"
 
+          # Hourly schedule + 23:59 final scan.
           grep -Fq '00:30, 01:30 ... 23:30' "$DC"
           grep -Fq 'candidate.set(Calendar.MINUTE, 59)' "$DC"
           grep -Fq 'DayControlService.startScheduled' app/src/main/java/com/cubux/audit/DayControlAlarmReceiver.java
@@ -65,6 +69,7 @@ jobs:
           grep -Fq 'new DayControlEngine(app).scan(day)' "$DS"
           grep -Fq 'CubuxLoader(client, team, scanDay, scanDay' "$DE"
 
+          # Event center: unread queue, no overwrite.
           grep -Fq 'Центр событий' "$MA"
           grep -Fq 'Все","Важные","Проверки","Сегодня","Система' "$MA"
           grep -Fq 'Отметить всё просмотренным' "$MA"
@@ -75,20 +80,24 @@ jobs:
           grep -Fq 'За сегодня изменена 1 запись' "$DS"
           grep -Fq 'За сегодня удалена 1 запись' "$DS"
 
+          # Android components are declared.
           grep -Fq '.DayControlService' "$MF"
           grep -Fq '.DayControlAlarmReceiver' "$MF"
 
+          # 3.0.17 journal/history remains present.
           grep -Fq 'Требует решения' "$MA"
           grep -Fq 'Решено' "$MA"
           grep -Fq 'showCheckHistoryPage' "$MA"
           grep -Fq 'resolution_status' "$DB"
 
+          # Core closed-day audit safety must remain unchanged.
           grep -Fq 'String to=TimeUtil.yesterday();' "$AC"
           grep -Fq 'MIN_MS = 500L' app/src/main/java/com/cubux/audit/DelayProfile.java
           grep -Fq 'MAX_MS = 10000L' app/src/main/java/com/cubux/audit/DelayProfile.java
           grep -Fq 'NoInternetException' app/src/main/java/com/cubux/audit/CubuxClient.java
           grep -Fq 'waitForInternet()' app/src/main/java/com/cubux/audit/CubuxClient.java
 
+          # Backup redesign is deliberately deferred to 3.0.19.
           if grep -Fq 'AutoBackupScheduler' "$MA" || \
              grep -Fq 'Хранить последние' "$MA" || \
              grep -Fq 'Изменить папку' "$MA"; then
@@ -165,7 +174,6 @@ jobs:
           test -n "$CUBUX_KEY_PASSWORD"
 
           export CUBUX_KEYSTORE_FILE="$RUNNER_TEMP/cubux-release.jks"
-
           trap 'rm -f "$CUBUX_KEYSTORE_FILE"' EXIT
 
           printf '%s' "$CUBUX_KEYSTORE_BASE64" \
