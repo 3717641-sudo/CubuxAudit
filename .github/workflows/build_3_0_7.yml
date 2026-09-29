@@ -1,0 +1,215 @@
+name: Cubux Security 3.0.7 Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack Cubux Security 3.0.7
+        shell: bash
+        run: |
+          set -e
+          test -f CubuxAudit_3_0_7_INSTALL.zip
+          rm -rf /tmp/cubux307
+          mkdir -p /tmp/cubux307
+          unzip -q CubuxAudit_3_0_7_INSTALL.zip -d /tmp/cubux307
+          cp -a /tmp/cubux307/. .
+
+      - name: Validate 3.0.7 rules
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          root=Path('.')
+          def read(p): return (root/p).read_text(encoding='utf-8')
+          def need(c,m):
+              if not c: raise SystemExit('VALIDATION FAILED: '+m)
+          def block(text,start,end):
+              a=text.index(start)
+              b=text.index(end,a)
+              return text[a:b]
+
+          bg=read('app/build.gradle')
+          mf=read('app/src/main/AndroidManifest.xml')
+          ma=read('app/src/main/java/com/cubux/audit/MainActivity.java')
+          db=read('app/src/main/java/com/cubux/audit/AuditDb.java')
+          cs=read('app/src/main/java/com/cubux/audit/CheckScheduler.java')
+          ar=read('app/src/main/java/com/cubux/audit/AuditActionReceiver.java')
+          af=read('app/src/main/java/com/cubux/audit/AuditForegroundService.java')
+          ac=read('app/src/main/java/com/cubux/audit/AuditCoordinator.java')
+          sh=read('app/src/main/java/com/cubux/audit/StableHistoryLoader.java')
+          lc=read('app/src/main/java/com/cubux/audit/LightCheckEngine.java')
+          dp=read('app/src/main/java/com/cubux/audit/DelayProfile.java')
+          cc=read('app/src/main/java/com/cubux/audit/CubuxClient.java')
+          ss=read('app/src/main/java/com/cubux/audit/CheckStatusStore.java')
+
+          need("versionName '3.0.7'" in bg and 'versionCode 42' in bg,
+               'version mismatch')
+          need('Cubux Security 3.0.7' in ma, 'UI version mismatch')
+
+          # New 3.0.7 Home and navigation.
+          need('refreshDashboardInformer' in ma and 'Всё отлично — данные не изменились' in ma,
+               'dynamic Home informer missing')
+          need('showEventCenterDialog' in ma and 'История событий' in ma and 'db.eventsText()' in ma,
+               'clickable event center missing')
+          need('PAGE_COUNT = 6' in ma,
+               'six-page navigation missing')
+          for label in ['Главная','Проверка','Банк','Отчёты','Журнал','Настройки']:
+              need(label in ma, 'navigation label missing: '+label)
+          need('dispatchTouchEvent(MotionEvent ev)' in ma and 'currentPage + 1' in ma and 'currentPage - 1' in ma,
+               'horizontal swipe navigation missing')
+          need('Быстрая проверка' in ma and 'Полная проверка' in ma,
+               'Quick/Full buttons missing')
+          need('pauseButton.setVisibility(View.GONE)' in ma and 'stopButton.setVisibility(View.GONE)' in ma,
+               'Pause/Stop must be hidden before run')
+          need('pauseButton.setVisibility(View.VISIBLE)' in ma and 'stopButton.setVisibility(View.VISIBLE)' in ma,
+               'Pause/Stop must appear during run')
+
+          home=block(ma,'private View buildHomeStatsRow()','private View buildHomeCheckActions()')
+          checks=block(ma,'private View buildStatsRow()','private TextView statCard(')
+          need(home.count('statCard(')==3 and checks.count('statCard(')==3,
+               'Home/Check must show exactly three counters')
+          for name in ['Новые','Изменённые','Удалённые']:
+              need(name in home and name in checks, 'required counter missing: '+name)
+
+          # Event history database and key sources.
+          need('DB_VERSION=7' in db and 'CREATE TABLE IF NOT EXISTS app_events' in db,
+               'event-history DB migration missing')
+          need('public void appEvent' in db and 'public String eventsText()' in db,
+               'event-history API missing')
+          need('db.appEvent' in ss and 'СЕТЬ/CUBUX' in ma,
+               'check/network events are not recorded')
+          need('пропущенная проверка' in cs.lower() and 'appEvent("WARNING","АВТОПРОВЕРКА"' in cs,
+               'missed-check event missing')
+
+          # 3.0.6 status/UI guarantees retained.
+          need('detailsText.setMinLines(8)' in ma and 'detailsText.setMaxLines(8)' in ma,
+               'fixed 8-line status block missing')
+          need('statusText.setVisibility(View.GONE)' in ma,
+               'duplicate large stage title is visible')
+          need('boldCurrentAction' in ma and 'StyleSpan(Typeface.BOLD)' in ma and '"Сейчас: ".length()' in ma,
+               'bold current-action accent missing')
+
+          # Scheduling and single-session control retained.
+          need('android.permission.SCHEDULE_EXACT_ALARM' in mf and 'android.permission.RECEIVE_BOOT_COMPLETED' in mf,
+               'schedule/boot permissions missing')
+          need('.ScheduledAlarmReceiver' in mf and '.BootReceiver' in mf,
+               'schedule receivers missing')
+          need('setExactAndAllowWhileIdle' in cs and 'canScheduleExactAlarms' in cs,
+               'exact-alarm scheduling missing')
+          need('scheduleStartup' in cs and 'missed_check_pending' in cs,
+               'missed-run recovery missing')
+          need('AuditForegroundService.startScheduled' in read('app/src/main/java/com/cubux/audit/ScheduledAlarmReceiver.java'),
+               'scheduled receiver does not launch foreground service')
+          need('START_STICKY' in af and 'startScheduled' in af,
+               'foreground scheduled start missing')
+          need('AuditControlRegistry.attach(control,mode)' in af and 'AuditControlRegistry.current()' in ma,
+               'scheduled/manual shared control missing')
+          need('c.pause()' in ar and 'c.resume()' in ar and 'c.stop()' in ar,
+               'notification pause/resume/stop missing')
+          need('AuditRunGate.tryAcquire()' in ac and 'AuditRunGate.release()' in ac,
+               'single-audit gate missing')
+
+          # Yesterday warning remains limited to scheduled/night flow.
+          need('scheduled_check_active' in af and 'yesterday_changed_during_scan' in af,
+               'scheduled yesterday watch state missing')
+          need('yesterday_changed_during_scan' in sh and 'YESTERDAY_CHANGED' in sh,
+               'yesterday-change detection missing')
+          need('Визуально проверьте вчерашний день' in af,
+               'yesterday visual-check warning missing')
+
+          # Data integrity and server protection retained.
+          need('String to=TimeUtil.yesterday();' in ac,
+               'today must remain excluded from scans')
+          need('verifyWithMonthlyProbe' in sh and 'runMonthlyControl' in lc,
+               'monthly stability/light-check protection missing')
+          need('MIN_MS = 500L' in dp and 'MAX_MS = 10000L' in dp,
+               '0.5-10 second delay range missing')
+          need('NoInternetException' in cc and 'waitForInternet()' in cc,
+               'network-loss resume logic missing')
+          need('AccountDirectory' in ac and 'account_name:' in db,
+               'human account-name mapping missing')
+          need('return "Не определён"' in db and 'if(a<0)return "Расход"' in db,
+               'safe operation-type classification missing')
+
+          print('PASS: Cubux Security 3.0.7 static rules')
+          PYCODE
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK 35
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Test delay, timer and request protection
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/cubux-tests
+          javac -encoding UTF-8 -d /tmp/cubux-tests \
+            app/src/main/java/com/cubux/audit/DelayProfile.java \
+            app/src/main/java/com/cubux/audit/AuditControl.java \
+            app/src/main/java/com/cubux/audit/AuditControlRegistry.java \
+            app/src/main/java/com/cubux/audit/AuditProgressListener.java \
+            app/src/main/java/com/cubux/audit/GentleServerGate.java \
+            tests/DelayProfileTest.java \
+            tests/AuditControlTimerTest.java \
+            tests/GentleServerGateTest.java
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.DelayProfileTest
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.AuditControlTimerTest
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.GentleServerGateTest
+
+      - name: Test closed-day cutoff
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/cubux-time-tests
+          javac -encoding UTF-8 -d /tmp/cubux-time-tests \
+            app/src/main/java/com/cubux/audit/TimeUtil.java \
+            tests/ClosedDayRulesTest.java
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-time-tests com.cubux.audit.ClosedDayRulesTest
+
+      - name: Build signed release APK
+        env:
+          CUBUX_KEYSTORE_BASE64: ${{ secrets.CUBUX_KEYSTORE_BASE64 }}
+          CUBUX_KEYSTORE_PASSWORD: ${{ secrets.CUBUX_KEYSTORE_PASSWORD }}
+          CUBUX_KEY_ALIAS: ${{ secrets.CUBUX_KEY_ALIAS }}
+          CUBUX_KEY_PASSWORD: ${{ secrets.CUBUX_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -e
+          test -n "$CUBUX_KEYSTORE_BASE64"
+          test -n "$CUBUX_KEYSTORE_PASSWORD"
+          test -n "$CUBUX_KEY_ALIAS"
+          test -n "$CUBUX_KEY_PASSWORD"
+          export CUBUX_KEYSTORE_FILE="$RUNNER_TEMP/cubux-release.jks"
+          trap 'rm -f "$CUBUX_KEYSTORE_FILE"' EXIT
+          printf '%s' "$CUBUX_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$CUBUX_KEYSTORE_FILE"
+          test -s "$CUBUX_KEYSTORE_FILE"
+          gradle --no-daemon assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CubuxSecurity-3.0.7-Release
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
