@@ -1,0 +1,72 @@
+name: Cubux Security 3.0.21 Final Daily Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack Cubux Security 3.0.21
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f CubuxAudit_3_0_21_INSTALL.zip
+          rm -rf /tmp/cubux321
+          mkdir -p /tmp/cubux321
+          unzip -q CubuxAudit_3_0_21_INSTALL.zip -d /tmp/cubux321
+          cp -a /tmp/cubux321/. .
+
+      - name: Validate 3.0.21 scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          MA=app/src/main/java/com/cubux/audit/MainActivity.java
+          DB=app/src/main/java/com/cubux/audit/AuditDb.java
+          TR=app/src/main/java/com/cubux/audit/TestRecordPolicy.java
+          BT=app/src/main/java/com/cubux/audit/BackupTimePolicy.java
+          BK=app/src/main/java/com/cubux/audit/BackupScheduler.java
+          BM=app/src/main/java/com/cubux/audit/BackupManager.java
+          BS=app/src/main/java/com/cubux/audit/BackupStorage.java
+          AB=app/src/main/java/com/cubux/audit/AutoBackupManager.java
+          BG=app/src/main/java/com/cubux/audit/BackupOperationGate.java
+          AC=app/src/main/java/com/cubux/audit/AuditCoordinator.java
+          DC=app/src/main/java/com/cubux/audit/DayControlService.java
+          MF=app/src/main/AndroidManifest.xml
+
+          grep -Fq "applicationId 'com.cubux.audit'" app/build.gradle
+          grep -Fq "versionName '3.0.21'" app/build.gradle
+          grep -Fq 'versionCode 63' app/build.gradle
+          grep -Fq 'Cubux Security 3.0.21' "$MA"
+
+          grep -Fq 'return "тест".equals(normalized);' "$TR"
+          grep -Fq 'testTransactionIds()' "$DB"
+          grep -Fq 'isTestChange(ChangeItem x)' "$DB"
+          grep -Fq 'updateResolutionNote' "$DB"
+          grep -Fq 'excluded=testTransactionIds()' "$DB"
+          grep -Fq 'ТЕСТ' "$MA"
+          grep -Fq 'Исключена из отчётов и статистики' "$MA"
+          grep -Fq 'Сохранить примечание' "$MA"
+
+          grep -Fq 'Время автокопии' "$MA"
+          grep -Fq 'TimePickerDialog' "$MA"
+          grep -Fq 'backup_time_hhmm' "$BK"
+          grep -Fq 'BackupTimePolicy.nextMs' "$BK"
+          grep -Fq 'setTime(Context c,AuditDb db,int hour,int minute)' "$BK"
+          test -s "$BT"
+
+          grep -Fq 'if (backupPageVisible)' "$MA"
+          grep -Fq 'back.setOnClickListener(v->switchPage(PAGE_HOME))' "$MA"
+          grep -Fq 'Резервная копия создана' "$MA"
+          grep -Fq 'setPositiveButton("ОК",(d,w)->switchPage(PAGE_HOME))' "$MA"
+
+          grep -Fq 'android:icon="@mipmap/ic_launcher"' "$MF"
+          grep -Fq 'android:roundIcon="@mipmap/ic_launcher_round"' "$MF"
+          grep -Fq 'R.drawable.ic_app_wealth' "$MA
