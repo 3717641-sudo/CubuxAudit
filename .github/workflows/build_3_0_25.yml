@@ -1,0 +1,275 @@
+name: Cubux Security 3.0.25 Live Check State Fix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack Cubux Security 3.0.25
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f CubuxAudit_3_0_25_INSTALL.zip
+          rm -rf /tmp/cubux325
+          mkdir -p /tmp/cubux325
+          unzip -q CubuxAudit_3_0_25_INSTALL.zip -d /tmp/cubux325
+          cp -a /tmp/cubux325/. .
+
+      - name: Validate 3.0.25 live-check state fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          MA=app/src/main/java/com/cubux/audit/MainActivity.java
+          FG=app/src/main/java/com/cubux/audit/AuditForegroundService.java
+          AR=app/src/main/java/com/cubux/audit/AuditActionReceiver.java
+          SS=app/src/main/java/com/cubux/audit/AuditSessionStore.java
+          SP=app/src/main/java/com/cubux/audit/AuditSessionPolicy.java
+          DB=app/src/main/java/com/cubux/audit/AuditDb.java
+          TR=app/src/main/java/com/cubux/audit/TestRecordPolicy.java
+          BT=app/src/main/java/com/cubux/audit/BackupTimePolicy.java
+          BK=app/src/main/java/com/cubux/audit/BackupScheduler.java
+          BM=app/src/main/java/com/cubux/audit/BackupManager.java
+          BS=app/src/main/java/com/cubux/audit/BackupStorage.java
+          AB=app/src/main/java/com/cubux/audit/AutoBackupManager.java
+          BG=app/src/main/java/com/cubux/audit/BackupOperationGate.java
+          AC=app/src/main/java/com/cubux/audit/AuditCoordinator.java
+          DC=app/src/main/java/com/cubux/audit/DayControlService.java
+          MF=app/src/main/AndroidManifest.xml
+
+          grep -Fq "applicationId 'com.cubux.audit'" app/build.gradle
+          grep -Fq "versionName '3.0.25'" app/build.gradle
+          grep -Fq 'versionCode 67' app/build.gradle
+          grep -Fq 'Cubux Security 3.0.25' "$MA"
+
+          # 3.0.25: one persistent live session is the bridge between foreground notification and UI.
+          test -s "$SS"
+          test -s "$SP"
+          grep -Fq 'cubux_live_audit_v325' "$SS"
+          grep -Fq 'public static synchronized long begin' "$SS"
+          grep -Fq 'public static synchronized void heartbeat' "$SS"
+          grep -Fq 'public static synchronized void finish' "$SS"
+          grep -Fq 'public static boolean isActive' "$SP"
+          grep -Fq 'public static boolean shouldRecoverOrphan' "$SP"
+          grep -Fq 'public static boolean acceptsAction' "$SP"
+
+          # Notification -> Check must refresh even when onResume is not called.
+          grep -Fq 'pageHost.post(() -> { try { syncProgressFromService(); } catch (Throwable ignored) {} });' "$MA"
+          grep -Fq 'private boolean isAuditSessionActive()' "$MA"
+          grep -Fq 'AuditSessionPolicy.isActive' "$MA"
+          grep -Fq 'recoverOrphanedAuditSession()' "$MA"
+          grep -Fq 'AuditForegroundService.snapshot(MainActivity.this)' "$MA"
+
+          # Pause/resume/stop remain synchronized between notification and screen.
+          grep -Fq 'AuditSessionStore.pause(this,liveRunId)' "$MA"
+          grep -Fq 'AuditSessionStore.resume(this,liveRunId)' "$MA"
+          grep -Fq 'AuditSessionStore.stopping(this,liveRunId)' "$MA"
+          grep -Fq 'AuditSessionStore.pause(context,s.runId)' "$AR"
+          grep -Fq 'AuditSessionStore.resume(context,s.runId)' "$AR"
+          grep -Fq 'AuditSessionStore.stopping(context,s.runId)' "$AR"
+
+          # Each notification action belongs to exactly one runId; old notifications cannot control a newer run.
+          grep -Fq 'public static final String EXTRA_RUN_ID="audit_run_id"' "$FG"
+          grep -Fq 'putExtra(EXTRA_RUN_ID,s.runId)' "$FG"
+          grep -Fq 'AuditSessionPolicy.acceptsAction' "$AR"
+          grep -Fq 'currentRunId(app)==liveRunId' "$FG"
+          grep -Fq 'liveRunId == AuditSessionStore.currentRunId(this)' "$MA"
+
+          # Dead-process / stale notification protection.
+          grep -Fq 'START_NOT_STICKY' "$FG"
+          grep -Fq 'Удалено осиротевшее уведомление проверки' "$FG"
+          grep -Fq 'Проверка прервана системой. Запустите её повторно.' "$MA"
+          grep -Fq 'stopStaleRunningRuns()' "$MA"
+          if grep -Fq 'ScheduledCheckJobService' "$MF"; then
+            echo 'VALIDATION FAILED: legacy JobService still registered in manifest'
+            exit 1
+          fi
+          if test -f app/src/main/java/com/cubux/audit/ScheduledCheckJobService.java; then
+            echo 'VALIDATION FAILED: legacy ScheduledCheckJobService source still present'
+            exit 1
+          fi
+
+          # Quick -> automatic full mode is reflected in the shared state.
+          grep -Fq '"FULL_AFTER_LIGHT"' "$FG"
+          grep -Fq '"FULL_AFTER_LIGHT".equals(mode)' "$MA"
+
+          # Multi-pass scans reset the visual stage guard so a second read pass cannot stay stuck on a later row.
+          grep -Fq 'private boolean isNewScanPhaseStage(String stage)' "$MA"
+          grep -Fq '"STABILITY_FALLBACK_SCAN".equals(stage)' "$MA"
+          grep -Fq '"HISTORY_RESCAN".equals(stage)' "$MA"
+          grep -Fq '"LIGHT_DEEP".equals(stage)' "$MA"
+          grep -Fq 'maxStageIndexShown = 0;' "$MA"
+          grep -Fq 'current = 3;' "$MA"
+
+          # 3.0.24 navigation remains five pages and Bank stays hidden without destructive DB changes.
+          grep -Fq 'private static final int PAGE_REPORTS = 2;' "$MA"
+          grep -Fq 'private static final int PAGE_JOURNAL = 3;' "$MA"
+          grep -Fq 'private static final int PAGE_SETTINGS = 4;' "$MA"
+          grep -Fq 'private static final int PAGE_COUNT = 5;' "$MA"
+          if grep -Fq 'private static final int PAGE_BANK' "$MA"; then
+            echo 'VALIDATION FAILED: Bank page is still in bottom navigation model'
+            exit 1
+          fi
+          grep -Fq 'String[] names = {"Главная", "Проверка", "Сегодня", "Журнал", "Настройки"};' "$MA"
+          grep -Fq 'CREATE TABLE IF NOT EXISTS bank_transactions' "$DB"
+          grep -Fq 'CREATE TABLE IF NOT EXISTS bank_matches' "$DB"
+          if grep -Fq 'DROP TABLE' "$DB"; then
+            echo 'VALIDATION FAILED: destructive database migration found'
+            exit 1
+          fi
+
+          # Existing safety rules retained.
+          grep -Fq 'return "тест".equals(normalized);' "$TR"
+          grep -Fq 'visibleLastCheckMetric' "$DB"
+          grep -Fq 'visibleChangedClosureDates' "$DB"
+          grep -Fq 'refreshAfterTestPolicy' app/src/main/java/com/cubux/audit/NotificationHelper.java
+          grep -Fq 'Время автокопии' "$MA"
+          grep -Fq 'BackupTimePolicy.nextMs' "$BK"
+          grep -Fq 'tryAcquireBackup' "$BG"
+          grep -Fq 'tryAcquireRestore' "$BG"
+          grep -Fq 'isRestoreActive' "$BG"
+          grep -Fq 'PRAGMA wal_checkpoint(FULL)' "$BM"
+          grep -Fq 'PRAGMA integrity_check' "$BM"
+          grep -Fq 'rollingName()' "$BS"
+          grep -Fq 'tryAcquireBackup()' "$AB"
+          grep -Fq 'BackupOperationGate.isRestoreActive()' "$AC"
+          grep -Fq 'BackupOperationGate.isRestoreActive()' "$DC"
+          grep -Fq 'String to=TimeUtil.yesterday();' "$AC"
+          grep -Fq 'clearProgressNotification()' "$DC"
+
+          # Icon and safe update identity retained.
+          grep -Fq 'android:icon="@mipmap/ic_launcher"' "$MF"
+          grep -Fq 'android:roundIcon="@mipmap/ic_launcher_round"' "$MF"
+          test -s app/src/main/res/drawable-nodpi/ic_app_wealth.png
+          test -s app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+          echo 'PASS: Cubux Security 3.0.25 live-check state fix validated'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK 35
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Test live-session policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/cubux-live-session
+          mkdir -p /tmp/cubux-live-session
+          javac -encoding UTF-8 -d /tmp/cubux-live-session \
+            app/src/main/java/com/cubux/audit/AuditSessionPolicy.java \
+            tests/AuditSessionPolicyTest.java
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-live-session com.cubux.audit.AuditSessionPolicyTest
+
+      - name: Test test-record policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/cubux-test-records
+          mkdir -p /tmp/cubux-test-records
+          javac -encoding UTF-8 -d /tmp/cubux-test-records \
+            app/src/main/java/com/cubux/audit/TestRecordPolicy.java \
+            tests/TestRecordPolicyTest.java
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-test-records com.cubux.audit.TestRecordPolicyTest
+
+      - name: Test automatic backup time
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/cubux-backup-time
+          mkdir -p /tmp/cubux-backup-time
+          javac -encoding UTF-8 -d /tmp/cubux-backup-time \
+            app/src/main/java/com/cubux/audit/BackupTimePolicy.java \
+            tests/BackupTimePolicyTest.java
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-backup-time com.cubux.audit.BackupTimePolicyTest
+
+      - name: Test backup operation gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/cubux-backup-tests
+          mkdir -p /tmp/cubux-backup-tests
+          javac -encoding UTF-8 -d /tmp/cubux-backup-tests \
+            app/src/main/java/com/cubux/audit/BackupOperationGate.java \
+            tests/BackupOperationGateTest.java
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-backup-tests com.cubux.audit.BackupOperationGateTest
+
+      - name: Test delay, timer and request protection
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/cubux-tests
+          mkdir -p /tmp/cubux-tests
+          javac -encoding UTF-8 -d /tmp/cubux-tests \
+            app/src/main/java/com/cubux/audit/DelayProfile.java \
+            app/src/main/java/com/cubux/audit/AuditControl.java \
+            app/src/main/java/com/cubux/audit/AuditControlRegistry.java \
+            app/src/main/java/com/cubux/audit/AuditProgressListener.java \
+            app/src/main/java/com/cubux/audit/GentleServerGate.java \
+            tests/DelayProfileTest.java \
+            tests/AuditControlTimerTest.java \
+            tests/GentleServerGateTest.java
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.DelayProfileTest
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.AuditControlTimerTest
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-tests com.cubux.audit.GentleServerGateTest
+
+      - name: Test closed-day cutoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/cubux-time-tests
+          mkdir -p /tmp/cubux-time-tests
+          javac -encoding UTF-8 -d /tmp/cubux-time-tests \
+            app/src/main/java/com/cubux/audit/TimeUtil.java \
+            tests/ClosedDayRulesTest.java
+          java -Dfile.encoding=UTF-8 -cp /tmp/cubux-time-tests com.cubux.audit.ClosedDayRulesTest
+
+      - name: Build signed release APK
+        env:
+          CUBUX_KEYSTORE_BASE64: ${{ secrets.CUBUX_KEYSTORE_BASE64 }}
+          CUBUX_KEYSTORE_PASSWORD: ${{ secrets.CUBUX_KEYSTORE_PASSWORD }}
+          CUBUX_KEY_ALIAS: ${{ secrets.CUBUX_KEY_ALIAS }}
+          CUBUX_KEY_PASSWORD: ${{ secrets.CUBUX_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CUBUX_KEYSTORE_BASE64"
+          test -n "$CUBUX_KEYSTORE_PASSWORD"
+          test -n "$CUBUX_KEY_ALIAS"
+          test -n "$CUBUX_KEY_PASSWORD"
+
+          export CUBUX_KEYSTORE_FILE="$RUNNER_TEMP/cubux-release.jks"
+          trap 'rm -f "$CUBUX_KEYSTORE_FILE"' EXIT
+
+          printf '%s' "$CUBUX_KEYSTORE_BASE64" \
+            | tr -d '[:space:]' \
+            | base64 --decode > "$CUBUX_KEYSTORE_FILE"
+
+          test -s "$CUBUX_KEYSTORE_FILE"
+          gradle --no-daemon assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CubuxSecurity-3.0.25-Release
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
